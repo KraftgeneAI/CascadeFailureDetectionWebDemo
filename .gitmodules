@@ -1,0 +1,4 @@
+[submodule "CascadeFailureDetection"]
+	path = CascadeFailureDetection
+	url = git@github.com:KraftgeneAI/CascadeFailureDetection.git
+	branch = model_improvement
