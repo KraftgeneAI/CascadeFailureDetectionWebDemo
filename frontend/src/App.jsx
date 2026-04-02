@@ -62,7 +62,7 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── Left sidebar ─────────────────────────────────────────── */}
-        <aside className="flex flex-col w-72 shrink-0 border-r border-gray-800 bg-gray-900 overflow-y-auto">
+        <aside className="flex flex-col w-96 shrink-0 border-r border-gray-800 bg-gray-900 overflow-y-auto">
           <div className="p-4 border-b border-gray-800">
             <ScenarioSelector onScenarioLoad={handleScenarioLoad} />
           </div>

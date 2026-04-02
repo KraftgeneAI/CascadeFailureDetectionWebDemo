@@ -335,38 +335,74 @@ export default function GridMap({ scenario, selectedNodeId, onNodeClick, cascade
       {/* ── Tooltip ─────────────────────────────────────────────────── */}
       {tooltip && (
         <div
-          className="absolute z-10 pointer-events-none bg-gray-800 border border-gray-700 rounded px-3 py-2 text-xs shadow-lg"
+          className="absolute z-10 pointer-events-none bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs shadow-xl min-w-[170px]"
           style={{ left: tooltip.x, top: tooltip.y }}
         >
-          <p className="font-semibold text-white mb-1">Node {tooltip.node.id}</p>
-          {tooltip.cascadeStep ? (
-            <>
-              <p className="text-orange-400 font-semibold">
+          {/* Header */}
+          <div className="flex items-center justify-between mb-2 pb-1 border-b border-gray-700">
+            <span className="font-bold text-white">Node {tooltip.node.id}</span>
+            <span className={
+              tooltip.node.is_failed ? 'text-red-400' :
+              tooltip.node.power_injection_mw > 0 ? 'text-green-400' : 'text-blue-400'
+            }>
+              {tooltip.node.is_failed ? 'Failed' :
+               tooltip.node.power_injection_mw > 0 ? 'Generator' : 'Load'}
+            </span>
+          </div>
+
+          {/* Cascade info (if part of a simulated cascade) */}
+          {tooltip.cascadeStep && (
+            <div className="mb-2 pb-1 border-b border-gray-700">
+              <p className="text-orange-400 font-semibold mb-0.5">
                 {tooltip.cascadeStep.is_trigger ? '💥 Trigger' : `⚡ Failure #${tooltip.cascadeStep.order}`}
               </p>
-              <p className="text-gray-400">
-                t = {tooltip.cascadeStep.failure_time_minutes.toFixed(2)} min
-              </p>
-              <p className="text-gray-400">
-                {tooltip.cascadeStep.reason}
-              </p>
-            </>
-          ) : (
-            <>
-              <p className={tooltip.node.is_failed ? 'text-red-400' : 'text-gray-400'}>
-                {tooltip.node.is_failed
-                  ? '⚠ Failed'
-                  : tooltip.node.power_injection_mw > 0
-                  ? '⚡ Generator'
-                  : '🔌 Load'}
-              </p>
-              <p className="text-gray-400">
-                P = {tooltip.node.power_injection_mw.toFixed(1)} MW
-              </p>
-              <p className="text-gray-400">
-                Q = {tooltip.node.reactive_injection_mvar.toFixed(1)} MVAr
-              </p>
-            </>
+              <TRow label="Time" value={`${tooltip.cascadeStep.failure_time_minutes.toFixed(2)} min`} />
+              <TRow label="Reason" value={tooltip.cascadeStep.reason} />
+            </div>
+          )}
+
+          {/* Power */}
+          <div className="mb-2 space-y-0.5">
+            <TRow
+              label="P"
+              value={`${tooltip.node.power_injection_mw.toFixed(1)} MW`}
+              colour={tooltip.node.power_injection_mw >= 0 ? 'text-green-400' : 'text-red-400'}
+            />
+            <TRow
+              label="Q"
+              value={`${tooltip.node.reactive_injection_mvar.toFixed(1)} MVAr`}
+              colour="text-blue-400"
+            />
+          </div>
+
+          {/* Ground truth measurements */}
+          {tooltip.node.voltage_pu !== undefined && (
+            <div className="space-y-0.5 pt-1 border-t border-gray-700">
+              <TRow
+                label="Voltage"
+                value={`${tooltip.node.voltage_pu.toFixed(4)} pu`}
+                colour={tooltipVoltageColour(tooltip.node.voltage_pu)}
+              />
+              <TRow
+                label="Angle"
+                value={`${(tooltip.node.voltage_angle_rad * 180 / Math.PI).toFixed(2)}°`}
+              />
+              <TRow
+                label="Frequency"
+                value={`${tooltip.node.frequency_hz.toFixed(3)} Hz`}
+                colour={tooltipFreqColour(tooltip.node.frequency_hz)}
+              />
+              <TRow
+                label="Temp"
+                value={`${tooltip.node.equipment_temp_c.toFixed(1)} °C`}
+                colour={tooltipTempColour(tooltip.node.equipment_temp_c)}
+              />
+              <TRow
+                label="Condition"
+                value={`${(tooltip.node.equipment_condition * 100).toFixed(0)}%`}
+                colour={tooltipCondColour(tooltip.node.equipment_condition)}
+              />
+            </div>
           )}
         </div>
       )}
@@ -428,4 +464,39 @@ function LegendLine({ colour, label }) {
       <span className="text-gray-300">{label}</span>
     </div>
   );
+}
+
+// ─── Tooltip sub-components & colour helpers ──────────────────────────────────
+
+function TRow({ label, value, colour = 'text-gray-300' }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-gray-500">{label}</span>
+      <span className={`font-mono ${colour}`}>{value}</span>
+    </div>
+  );
+}
+
+function tooltipVoltageColour(pu) {
+  if (pu < 0.90 || pu > 1.10) return 'text-red-400';
+  if (pu < 0.95 || pu > 1.05) return 'text-yellow-400';
+  return 'text-green-400';
+}
+
+function tooltipFreqColour(hz) {
+  if (hz < 59.0 || hz > 61.0) return 'text-red-400';
+  if (hz < 59.5 || hz > 60.5) return 'text-yellow-400';
+  return 'text-green-400';
+}
+
+function tooltipTempColour(c) {
+  if (c > 85) return 'text-red-400';
+  if (c > 70) return 'text-yellow-400';
+  return 'text-green-400';
+}
+
+function tooltipCondColour(v) {
+  if (v < 0.40) return 'text-red-400';
+  if (v < 0.70) return 'text-yellow-400';
+  return 'text-green-400';
 }

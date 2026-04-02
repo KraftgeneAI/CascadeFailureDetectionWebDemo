@@ -79,6 +79,14 @@ class ScenarioService:
         reactive_injection: np.ndarray = ts0["reactive_injection"]  # (N,) MVAr
         node_labels: np.ndarray = ts0["node_labels"]                # (N,) 0/1
 
+        # scada_data columns (from data generator):
+        #   col 0 — voltage magnitude (pu)
+        #   col 1 — voltage angle (rad)
+        #   col 5 — equipment temperature (°C)
+        #   col 6 — system frequency (Hz)
+        #   col 8 — equipment condition (0–1, higher = better)
+        scada: np.ndarray = ts0.get("scada_data", np.zeros((len(self.topo.nodes), 18), dtype=np.float32))
+
         nodes = []
         for i, base in enumerate(self.topo.nodes):
             nodes.append(
@@ -87,6 +95,12 @@ class ScenarioService:
                     "power_injection_mw": float(power_injection[i]),
                     "reactive_injection_mvar": float(reactive_injection[i]),
                     "is_failed": bool(node_labels[i] > 0.5),
+                    # Grid measurements from SCADA
+                    "voltage_pu": float(scada[i, 0]) if scada.shape[1] > 0 else 1.0,
+                    "voltage_angle_rad": float(scada[i, 1]) if scada.shape[1] > 1 else 0.0,
+                    "equipment_temp_c": float(scada[i, 5]) if scada.shape[1] > 5 else 25.0,
+                    "frequency_hz": float(scada[i, 6]) if scada.shape[1] > 6 else 60.0,
+                    "equipment_condition": float(scada[i, 8]) if scada.shape[1] > 8 else 1.0,
                 }
             )
 

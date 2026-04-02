@@ -78,6 +78,37 @@ export default function NodePanel({ node, scenario, cascadeResult, cascadeLoadin
         />
       </div>
 
+      {/* Grid measurements */}
+      {node.voltage_pu !== undefined && (
+        <div className="bg-gray-800 rounded p-3 space-y-2">
+          <p className="text-gray-500 font-semibold">Grid Measurements</p>
+          <Row
+            label="Voltage"
+            value={`${node.voltage_pu.toFixed(4)} pu`}
+            colour={voltageColour(node.voltage_pu)}
+          />
+          <Row
+            label="Voltage angle"
+            value={`${(node.voltage_angle_rad * 180 / Math.PI).toFixed(2)}°`}
+            colour="text-gray-300"
+          />
+          <Row
+            label="Frequency"
+            value={`${node.frequency_hz.toFixed(3)} Hz`}
+            colour={frequencyColour(node.frequency_hz)}
+          />
+          <Row
+            label="Equip. temp."
+            value={`${node.equipment_temp_c.toFixed(1)} °C`}
+            colour={tempColour(node.equipment_temp_c)}
+          />
+          <div className="flex items-center justify-between">
+            <span className="text-gray-400">Equip. condition</span>
+            <ConditionBar value={node.equipment_condition} />
+          </div>
+        </div>
+      )}
+
       {/* Connected lines */}
       <div className="bg-gray-800 rounded p-3 space-y-2">
         <p className="text-gray-500 font-semibold">
@@ -186,6 +217,47 @@ function Row({ label, value, colour }) {
     <div className="flex items-center justify-between">
       <span className="text-gray-400">{label}</span>
       <span className={`font-mono font-semibold ${colour}`}>{value}</span>
+    </div>
+  );
+}
+
+/** Voltage: normal 0.95–1.05 pu, warning 0.90–0.95 / 1.05–1.10, critical outside */
+function voltageColour(pu) {
+  if (pu < 0.90 || pu > 1.10) return 'text-red-400';
+  if (pu < 0.95 || pu > 1.05) return 'text-yellow-400';
+  return 'text-green-400';
+}
+
+/** Frequency: normal 59.5–60.5 Hz, warning 59.0–59.5 / 60.5–61.0, critical outside */
+function frequencyColour(hz) {
+  if (hz < 59.0 || hz > 61.0) return 'text-red-400';
+  if (hz < 59.5 || hz > 60.5) return 'text-yellow-400';
+  return 'text-green-400';
+}
+
+/** Equipment temperature: normal <70 °C, warning 70–85 °C, critical >85 °C */
+function tempColour(c) {
+  if (c > 85) return 'text-red-400';
+  if (c > 70) return 'text-yellow-400';
+  return 'text-green-400';
+}
+
+/** Horizontal bar showing equipment condition (0–1). */
+function ConditionBar({ value }) {
+  const pct = Math.max(0, Math.min(1, value)) * 100;
+  const colour =
+    pct < 40 ? '#ef4444' : pct < 70 ? '#eab308' : '#22c55e';
+  return (
+    <div className="flex items-center gap-2">
+      <div className="w-20 h-2 bg-gray-700 rounded overflow-hidden">
+        <div
+          className="h-full rounded"
+          style={{ width: `${pct.toFixed(1)}%`, background: colour }}
+        />
+      </div>
+      <span className="font-mono font-semibold text-gray-300">
+        {pct.toFixed(0)}%
+      </span>
     </div>
   );
 }
