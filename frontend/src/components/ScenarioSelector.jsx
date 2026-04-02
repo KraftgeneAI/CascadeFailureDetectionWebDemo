@@ -78,20 +78,6 @@ export default function ScenarioSelector({ onScenarioLoad }) {
             value={`${(selected.stress_level * 100).toFixed(1)}%`}
             colour="text-yellow-400"
           />
-          <MetaBadge
-            label="Failed nodes"
-            value={selected.num_failed_nodes}
-            colour="text-orange-400"
-          />
-          <MetaBadge
-            label="Cascade start"
-            value={
-              selected.cascade_start_time >= 0
-                ? `t = ${selected.cascade_start_time}`
-                : '—'
-            }
-            colour="text-gray-400"
-          />
         </div>
       )}
     </div>
