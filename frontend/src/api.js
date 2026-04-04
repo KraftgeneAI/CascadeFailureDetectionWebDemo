@@ -44,3 +44,15 @@ export function simulateCascade(scenarioId, nodeId) {
     body: JSON.stringify({ scenario_id: scenarioId, node_id: nodeId }),
   });
 }
+
+/**
+ * POST /api/compare — model prediction vs ground truth comparison.
+ * Returns all timestep grid states for animation, the truncation window
+ * (start_idx / end_idx), GNN prediction, ground truth, and accuracy metrics.
+ */
+export function compareScenario(scenarioId) {
+  return request('/compare', {
+    method: 'POST',
+    body: JSON.stringify({ scenario_id: scenarioId }),
+  });
+}

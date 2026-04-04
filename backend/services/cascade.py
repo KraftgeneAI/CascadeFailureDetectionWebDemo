@@ -22,9 +22,7 @@ import numpy as np
 import torch
 from typing import Dict, List, Tuple
 
-# Import from the tested root inference.py (not cascade_prediction/inference/).
-# The root version uses weights_only=False and the full CascadeDataset pipeline.
-from inference import CascadePredictor
+from cascade_prediction.inference import CascadePredictor
 from cascade_prediction.data.generator.simulator import PhysicsBasedGridSimulator
 from cascade_prediction.data.generator.config import Settings
 

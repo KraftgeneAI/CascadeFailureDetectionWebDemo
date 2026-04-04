@@ -31,13 +31,14 @@ from pydantic import BaseModel
 from services.topology import TopologyService
 from services.scenarios import ScenarioService
 from services.cascade import CascadeService
+from services.compare import CompareService
 
 # ---------------------------------------------------------------------------
 # Paths (relative to the library root, resolved at startup)
 # ---------------------------------------------------------------------------
 DATA_DIR      = CASCADE_LIB / "data" / "test"
 TOPOLOGY_PATH = CASCADE_LIB / "data" / "grid_topology.pkl"
-MODEL_PATH    = CASCADE_LIB / "checkpoints" / "best_f1_model.pth"
+MODEL_PATH    = CASCADE_LIB / "checkpoints" / "best_model.pth"
 
 # ---------------------------------------------------------------------------
 # App
@@ -82,11 +83,12 @@ def _jsonable(obj):
 topo_service: TopologyService = None
 scenario_service: ScenarioService = None
 cascade_service: CascadeService = None
+compare_service: CompareService = None
 
 
 @app.on_event("startup")
 async def _startup():
-    global topo_service, scenario_service, cascade_service
+    global topo_service, scenario_service, cascade_service, compare_service
 
     topo_service = TopologyService(str(TOPOLOGY_PATH))
     scenario_service = ScenarioService(str(DATA_DIR), topo_service)
@@ -100,6 +102,12 @@ async def _startup():
     # route can load raw scenarios without duplicating file-loading logic.
     cascade_service.set_scenario_service(scenario_service)
 
+    compare_service = CompareService(
+        predictor=cascade_service.predictor,
+        topo_service=topo_service,
+        scenario_service=scenario_service,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Request / response models
@@ -111,6 +119,10 @@ class PredictRequest(BaseModel):
 class CascadeRequest(BaseModel):
     scenario_id: int
     node_id: int
+
+
+class CompareRequest(BaseModel):
+    scenario_id: int
 
 
 # ---------------------------------------------------------------------------
@@ -190,6 +202,28 @@ def simulate_cascade(req: CascadeRequest):
         return _jsonable(result)
     except HTTPException:
         raise
+    except IndexError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/compare", summary="Model prediction vs ground truth comparison")
+def compare(req: CompareRequest):
+    """
+    Truncate the scenario using CascadeDataset's sliding-window logic (seed=42
+    for reproducibility), run the GNN on the truncated pre-cascade window, and
+    return:
+
+    - All timestep grid states for the frontend animation player
+    - start_idx / end_idx: the window the model actually saw
+    - cascade_probability and predicted_cascade_path from the GNN
+    - ground_truth_cascade_path from scenario metadata
+    - Per-node comparison metrics (TP, FP, FN, precision, recall, F1)
+    """
+    try:
+        result = compare_service.compare(req.scenario_id)
+        return _jsonable(result)
     except IndexError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
