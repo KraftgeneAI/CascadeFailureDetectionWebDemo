@@ -253,10 +253,13 @@ export default function GridMap({
 
   const onMouseMove = useCallback((e) => {
     if (!dragging.current) return;
+    // Capture values immediately — the ref may be nulled by onMouseUp before
+    // React's state updater function actually runs (race condition).
+    const { originTx, originTy, startX, startY } = dragging.current;
     setTransform((t) => ({
       ...t,
-      x: dragging.current.originTx + (e.clientX - dragging.current.startX),
-      y: dragging.current.originTy + (e.clientY - dragging.current.startY),
+      x: originTx + (e.clientX - startX),
+      y: originTy + (e.clientY - startY),
     }));
   }, []);
 
