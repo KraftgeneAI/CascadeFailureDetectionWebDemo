@@ -97,6 +97,18 @@ export default function GridMap({
   // ── Pan + zoom ─────────────────────────────────────────────────────
   const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 });
   const dragging = useRef(null);
+  // Mirror transform in a ref so onMouseMove can read k without re-creating.
+  const transformRef = useRef({ x: 0, y: 0, k: 1 });
+  useEffect(() => { transformRef.current = transform; }, [transform]);
+
+  // ── Node drag ──────────────────────────────────────────────────────
+  // nodeOffsets: {[nodeId]: {dx, dy}} — accumulated drag in SVG coordinates.
+  const [nodeOffsets, setNodeOffsets] = useState({});
+  const draggingNode  = useRef(null);  // {nodeId, startX, startY, origDx, origDy}
+  const nodeDragMoved = useRef(false); // true once pointer moves > 2px — suppresses click
+
+  // Reset offsets whenever the scenario changes.
+  useEffect(() => { setNodeOffsets({}); }, [scenario?.id]);
 
   // ── Tooltip ────────────────────────────────────────────────────────
   const [tooltip, setTooltip] = useState(null);
@@ -131,9 +143,12 @@ export default function GridMap({
 
   const posById = useMemo(() => {
     const m = {};
-    nodePos.forEach((n) => { m[n.id] = { px: n.px, py: n.py }; });
+    nodePos.forEach((n) => {
+      const off = nodeOffsets[n.id] ?? { dx: 0, dy: 0 };
+      m[n.id] = { px: n.px + off.dx, py: n.py + off.dy };
+    });
     return m;
-  }, [nodePos]);
+  }, [nodePos, nodeOffsets]);
 
   // ── Load stress map: nodeId → stress ratio (0–1) ──────────────────
   // Only load nodes (power_injection_mw ≤ 0) get a stress value.
@@ -257,6 +272,20 @@ export default function GridMap({
   }, [transform]);
 
   const onMouseMove = useCallback((e) => {
+    // Node drag takes priority over canvas pan.
+    if (draggingNode.current) {
+      const { nodeId, startX, startY, origDx, origDy } = draggingNode.current;
+      const k = transformRef.current.k;
+      const dx = (e.clientX - startX) / k;
+      const dy = (e.clientY - startY) / k;
+      // Mark as a real drag once the pointer moves more than 2 SVG units.
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) nodeDragMoved.current = true;
+      setNodeOffsets((prev) => ({
+        ...prev,
+        [nodeId]: { dx: origDx + dx, dy: origDy + dy },
+      }));
+      return;
+    }
     if (!dragging.current) return;
     // Capture values immediately — the ref may be nulled by onMouseUp before
     // React's state updater function actually runs (race condition).
@@ -268,7 +297,10 @@ export default function GridMap({
     }));
   }, []);
 
-  const onMouseUp = useCallback(() => { dragging.current = null; }, []);
+  const onMouseUp = useCallback(() => {
+    draggingNode.current = null;
+    dragging.current = null;
+  }, []);
 
   const onWheel = useCallback((e) => {
     e.preventDefault();
@@ -288,8 +320,24 @@ export default function GridMap({
     return () => el.removeEventListener('wheel', onWheel);
   }, [onWheel]);
 
+  function handleNodeMouseDown(e, node) {
+    if (e.button !== 0) return;
+    e.stopPropagation(); // prevent canvas pan while dragging a node
+    nodeDragMoved.current = false;
+    const off = nodeOffsets[node.id] ?? { dx: 0, dy: 0 };
+    draggingNode.current = {
+      nodeId: node.id,
+      startX: e.clientX,
+      startY: e.clientY,
+      origDx: off.dx,
+      origDy: off.dy,
+    };
+  }
+
   function handleNodeClick(e, node) {
     e.stopPropagation();
+    // Suppress click if the node was dragged rather than tapped.
+    if (nodeDragMoved.current) return;
     onNodeClick(node);
   }
 
@@ -430,10 +478,13 @@ export default function GridMap({
                 ? cascadeNodeColour(cascadeStep.order, totalCascadeFailures)
                 : nodeColour(node, loadStressMap[node.id] ?? 0));
 
+              const off = nodeOffsets[node.id] ?? { dx: 0, dy: 0 };
+
               return (
                 <g key={node.id}
-                  transform={`translate(${node.px},${node.py})`}
-                  style={{ cursor: compareMode ? 'default' : 'pointer' }}
+                  transform={`translate(${node.px + off.dx},${node.py + off.dy})`}
+                  style={{ cursor: compareMode ? 'default' : 'grab' }}
+                  onMouseDown={(e) => !compareMode && handleNodeMouseDown(e, node)}
                   onClick={(e) => !compareMode && handleNodeClick(e, node)}
                   onMouseEnter={(e) => showTooltip(e, node)}
                   onMouseLeave={() => setTooltip(null)}
