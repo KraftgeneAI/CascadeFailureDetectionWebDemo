@@ -82,6 +82,11 @@ export default function GridMap({
   selectedNodeId,
   onNodeClick,
   cascadeResult,
+  // Normal-mode timeline
+  normalFrame = 0,
+  onNormalFrameChange,
+  totalNormalFrames = 0,
+  // Compare-mode props
   compareMode = false,
   compareData = null,
   currentFrame = 0,
@@ -567,6 +572,40 @@ export default function GridMap({
         </div>
       </div>
 
+      {/* ── Normal-mode timeline ────────────────────────────────────── */}
+      {!compareMode && totalNormalFrames > 1 && (
+        <div className="shrink-0 bg-gray-900 border-t border-gray-800 px-4 py-3 space-y-2">
+          {/* Scrubber */}
+          <NormalTimelineBar
+            total={totalNormalFrames}
+            current={normalFrame}
+            cascadeStart={scenario?.metadata?.cascade_start_time ?? -1}
+            onChange={onNormalFrameChange}
+          />
+          {/* Step buttons + frame counter + hint */}
+          <div className="flex items-center gap-3 text-xs text-gray-400">
+            <button
+              onClick={() => onNormalFrameChange(Math.max(0, normalFrame - 1))}
+              disabled={normalFrame === 0}
+              className="w-7 h-7 flex items-center justify-center rounded bg-gray-800 hover:bg-gray-700 text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Previous timestep"
+            >
+              ‹
+            </button>
+            <button
+              onClick={() => onNormalFrameChange(Math.min(totalNormalFrames - 1, normalFrame + 1))}
+              disabled={normalFrame === totalNormalFrames - 1}
+              className="w-7 h-7 flex items-center justify-center rounded bg-gray-800 hover:bg-gray-700 text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed"
+              title="Next timestep"
+            >
+              ›
+            </button>
+            <span className="font-mono">t = {normalFrame + 1} / {totalNormalFrames}</span>
+            <span className="ml-auto text-gray-600">Click a node to simulate cascade from this timestep</span>
+          </div>
+        </div>
+      )}
+
       {/* ── Timeline + controls (compare mode only) ─────────────────── */}
       {compareMode && compareData && (
         <div className="shrink-0 bg-gray-900 border-t border-gray-800 px-4 py-3 space-y-2">
@@ -664,6 +703,40 @@ function TimelineBar({ total, current, startIdx, endIdx, cascadeStart, onChange 
       {/* Playhead */}
       <div className="absolute top-0 bottom-0 w-1 bg-white rounded"
         style={{ left: pct(current), transform: 'translateX(-50%)' }} />
+    </div>
+  );
+}
+
+// ─── Normal-mode timeline bar ─────────────────────────────────────────────────
+
+function NormalTimelineBar({ total, current, cascadeStart, onChange }) {
+  const pct = (i) => `${(i / total) * 100}%`;
+
+  function handleClick(e) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    onChange(Math.round(ratio * (total - 1)));
+  }
+
+  return (
+    <div className="relative h-5 cursor-pointer" onClick={handleClick}>
+      {/* Background track */}
+      <div className="absolute inset-y-0 left-0 right-0 rounded overflow-hidden bg-gray-700" />
+
+      {/* Cascade start marker */}
+      {cascadeStart >= 0 && cascadeStart < total && (
+        <div
+          className="absolute top-0 bottom-0 w-0.5 bg-red-500 opacity-70"
+          style={{ left: pct(cascadeStart) }}
+          title={`Cascade starts at t=${cascadeStart + 1}`}
+        />
+      )}
+
+      {/* Playhead */}
+      <div
+        className="absolute top-0 bottom-0 w-1 bg-blue-400 rounded"
+        style={{ left: pct(current), transform: 'translateX(-50%)' }}
+      />
     </div>
   );
 }

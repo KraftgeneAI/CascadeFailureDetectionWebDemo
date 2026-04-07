@@ -14,6 +14,10 @@ export default function App() {
   const [cascadeLoading, setCascadeLoading] = useState(false);
   const [cascadeError, setCascadeError] = useState(null);
 
+  // ── Normal mode timeline ─────────────────────────────────────────────
+  // normalFrame tracks which timestep is shown when scrubbing in normal mode.
+  const [normalFrame, setNormalFrame] = useState(0);
+
   // ── Compare mode (model prediction vs ground truth animation) ───────
   const [compareMode, setCompareMode] = useState(false);
   const [compareData, setCompareData] = useState(null);   // full API response
@@ -30,6 +34,7 @@ export default function App() {
     setSelectedNode(null);
     setCascadeResult(null);
     setCascadeError(null);
+    setNormalFrame(0);
     // Exit compare mode when scenario changes
     setCompareMode(false);
     setCompareData(null);
@@ -47,7 +52,9 @@ export default function App() {
     setCascadeResult(null);
     setCascadeError(null);
     try {
-      const result = await simulateCascade(scenario.id, node.id);
+      // Pass the current normal-mode frame so cascade starts from that
+      // timestep's physics state, not always t=0.
+      const result = await simulateCascade(scenario.id, node.id, normalFrame);
       setCascadeResult(result);
     } catch (e) {
       setCascadeError(e.message);
@@ -85,10 +92,14 @@ export default function App() {
 
   // ── Derived state ─────────────────────────────────────────────────────
 
-  // Which grid state to display: animated frame in compare mode, else t=0
+  // Which grid state to display:
+  //   compare mode  → compare animation frame
+  //   normal mode   → scrubbed normalFrame from all_timesteps (falls back to grid_state)
   const activeGridState = compareMode && compareData
     ? compareData.timesteps[currentFrame]
-    : scenario?.grid_state ?? null;
+    : (scenario?.all_timesteps?.[normalFrame] ?? scenario?.grid_state ?? null);
+
+  const totalNormalFrames = scenario?.total_timesteps ?? 0;
 
   const isCompareAvailable = scenario?.metadata?.is_cascade === true;
 
@@ -175,6 +186,10 @@ export default function App() {
               selectedNodeId={selectedNode?.id}
               onNodeClick={handleNodeClick}
               cascadeResult={compareMode ? null : cascadeResult}
+              // Normal-mode timeline
+              normalFrame={normalFrame}
+              onNormalFrameChange={setNormalFrame}
+              totalNormalFrames={totalNormalFrames}
               // Compare-mode props
               compareMode={compareMode}
               compareData={compareData}

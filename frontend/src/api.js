@@ -37,11 +37,16 @@ export function predict(scenarioId) {
   });
 }
 
-/** POST /api/cascade — physics-based cascade simulation from a trigger node */
-export function simulateCascade(scenarioId, nodeId) {
+/**
+ * POST /api/cascade — physics-based cascade simulation from a trigger node.
+ * @param {number} scenarioId
+ * @param {number} nodeId      - node to forcibly fail
+ * @param {number} [timestep]  - which timestep's grid state to use (default 0)
+ */
+export function simulateCascade(scenarioId, nodeId, timestep = 0) {
   return request('/cascade', {
     method: 'POST',
-    body: JSON.stringify({ scenario_id: scenarioId, node_id: nodeId }),
+    body: JSON.stringify({ scenario_id: scenarioId, node_id: nodeId, timestep }),
   });
 }
 

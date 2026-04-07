@@ -88,28 +88,39 @@ class CascadeService:
     # /api/cascade  — physics-based cascade simulation
     # ------------------------------------------------------------------
 
-    def simulate_cascade(self, scenario_id: int, node_id: int) -> Dict:
+    def simulate_cascade(
+        self,
+        scenario_id: int,
+        node_id: int,
+        timestep: int = 0,
+    ) -> Dict:
         """
         Simulate cascade propagation starting from a manually failed node.
 
         Steps:
-          1. Load the scenario and read physics state from sequence[0].
+          1. Load the scenario and read physics state from sequence[timestep].
           2. Split power_injection into generation / load vectors.
           3. Call propagate_cascade_physics() — BFS with per-step AC power flow.
           4. Return the ordered failure sequence.
 
         Args:
             scenario_id: Scenario to use as initial grid state.
-            node_id:     Node to forcibly fail at t=0.
+            node_id:     Node to forcibly fail.
+            timestep:    Which timestep's grid state to use as the starting
+                         conditions (0-based, defaults to 0).
 
         Returns:
-            Dict with trigger_node, cascade_path (ordered list of failures),
-            and total_failures count.
+            Dict with trigger_node, timestep, cascade_path (ordered list of
+            failures), and total_failures count.
         """
         scenario = self._scenario_service.load_raw_scenario(scenario_id)
-        ts0 = scenario["sequence"][0]
+        sequence = scenario["sequence"]
 
-        # ---- extract physics state from first timestep -------------------
+        # Clamp timestep to valid range
+        timestep = max(0, min(timestep, len(sequence) - 1))
+        ts0 = sequence[timestep]
+
+        # ---- extract physics state from the chosen timestep -------------
         # power_injection is net injection (positive = generation surplus,
         # negative = load surplus).  Split into separate arrays for PyPSA.
         power_injection: np.ndarray = np.array(ts0["power_injection"], dtype=float)
@@ -166,6 +177,7 @@ class CascadeService:
         return {
             "scenario_id": scenario_id,
             "trigger_node": node_id,
+            "timestep": timestep,
             "total_failures": len(cascade_path),
             "cascade_path": cascade_path,
         }

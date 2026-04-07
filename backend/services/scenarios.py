@@ -60,70 +60,26 @@ class ScenarioService:
 
     def get_scenario(self, scenario_id: int) -> Dict:
         """
-        Return full scenario detail: topology + first-timestep grid state + metadata.
+        Return full scenario detail: topology + all timestep grid states + metadata.
 
         Args:
             scenario_id: Index into the sorted scenario file list.
 
         Returns:
-            Dict with keys: id, metadata, ground_truth_cascade_path, grid_state.
-            grid_state.nodes includes topology positions and t=0 physics values.
-            grid_state.edges includes topology connectivity and t=0 line flows.
+            Dict with keys: id, metadata, ground_truth_cascade_path,
+            grid_state (t=0, kept for backwards compat), all_timesteps (all T
+            frames for the normal-mode timeline scrubber), total_timesteps.
         """
         scenario = self._load_by_id(scenario_id)
         meta = scenario.get("metadata", {})
-        ts0 = scenario["sequence"][0]
+        sequence = scenario["sequence"]
+        thermal_limits: np.ndarray = sequence[0]["thermal_limits"]
 
-        # ---- per-node state ------------------------------------------------
-        power_injection: np.ndarray = ts0["power_injection"]       # (N,) MW
-        reactive_injection: np.ndarray = ts0["reactive_injection"]  # (N,) MVAr
-        node_labels: np.ndarray = ts0["node_labels"]                # (N,) 0/1
-
-        # scada_data columns (from data generator):
-        #   col 0 — voltage magnitude (pu)
-        #   col 1 — voltage angle (rad)
-        #   col 5 — equipment temperature (°C)
-        #   col 6 — system frequency (Hz)
-        #   col 8 — equipment condition (0–1, higher = better)
-        scada: np.ndarray = ts0.get("scada_data", np.zeros((len(self.topo.nodes), 18), dtype=np.float32))
-
-        nodes = []
-        for i, base in enumerate(self.topo.nodes):
-            nodes.append(
-                {
-                    **base,
-                    "power_injection_mw": float(power_injection[i]),
-                    "reactive_injection_mvar": float(reactive_injection[i]),
-                    "is_failed": bool(node_labels[i] > 0.5),
-                    # Grid measurements from SCADA
-                    "voltage_pu": float(scada[i, 0]) if scada.shape[1] > 0 else 1.0,
-                    "voltage_angle_rad": float(scada[i, 1]) if scada.shape[1] > 1 else 0.0,
-                    "equipment_temp_c": float(scada[i, 5]) if scada.shape[1] > 5 else 25.0,
-                    "frequency_hz": float(scada[i, 6]) if scada.shape[1] > 6 else 60.0,
-                    "equipment_condition": float(scada[i, 8]) if scada.shape[1] > 8 else 1.0,
-                }
-            )
-
-        # ---- per-edge state ------------------------------------------------
-        edge_attr: np.ndarray = ts0["edge_attr"]         # (E, 7)
-        thermal_limits: np.ndarray = ts0["thermal_limits"]  # (E,)
-
-        # edge_attr columns (from data inspection):
-        #   col 0 — line reactance
-        #   col 1 — thermal limit (MW)  [same values as thermal_limits array]
-        #   col 2 — resistance / susceptance
-        #   col 5 — active power flow (MW, can be negative for reverse flow)
-        #   col 6 — reactive power flow (MVAr)
-        edges = []
-        for i, base in enumerate(self.topo.edges):
-            edges.append(
-                {
-                    **base,
-                    "active_flow_mw": float(edge_attr[i, 5]) if edge_attr.shape[1] > 5 else 0.0,
-                    "reactive_flow_mvar": float(edge_attr[i, 6]) if edge_attr.shape[1] > 6 else 0.0,
-                    "thermal_limit_mw": float(thermal_limits[i]),
-                }
-            )
+        # ---- all timesteps (normal-mode timeline) -------------------------
+        all_timesteps = [
+            self._build_grid_state(ts, thermal_limits)
+            for ts in sequence
+        ]
 
         # ---- ground truth cascade path ------------------------------------
         failed_nodes = meta.get("failed_nodes", [])
@@ -153,11 +109,64 @@ class ScenarioService:
                 "base_mva": float(meta.get("base_mva", 1000.0)),
             },
             "ground_truth_cascade_path": ground_truth_path,
-            "grid_state": {
-                "nodes": nodes,
-                "edges": edges,
-            },
+            # t=0 state kept for backwards compatibility
+            "grid_state": all_timesteps[0],
+            # full timeline for the normal-mode scrubber
+            "all_timesteps": all_timesteps,
+            "total_timesteps": len(all_timesteps),
         }
+
+    def _build_grid_state(
+        self,
+        ts: Dict,
+        thermal_limits: np.ndarray,
+    ) -> Dict:
+        """
+        Convert one raw timestep dict into a frontend-ready {nodes, edges} dict.
+        Used by get_scenario for all_timesteps and by CompareService.
+        """
+        power_injection: np.ndarray = ts.get(
+            "power_injection", np.zeros(len(self.topo.nodes))
+        )
+        reactive_injection: np.ndarray = ts.get(
+            "reactive_injection", np.zeros(len(self.topo.nodes))
+        )
+        node_labels: np.ndarray = ts.get(
+            "node_labels", np.zeros(len(self.topo.nodes))
+        )
+        scada: np.ndarray = ts.get(
+            "scada_data",
+            np.zeros((len(self.topo.nodes), 18), dtype=np.float32),
+        )
+        edge_attr: np.ndarray = ts.get(
+            "edge_attr",
+            np.zeros((len(self.topo.edges), 7), dtype=np.float32),
+        )
+
+        nodes = []
+        for i, base in enumerate(self.topo.nodes):
+            nodes.append({
+                **base,
+                "power_injection_mw":      float(power_injection[i]),
+                "reactive_injection_mvar": float(reactive_injection[i]),
+                "is_failed":               bool(node_labels[i] > 0.5),
+                "voltage_pu":              float(scada[i, 0]) if scada.shape[1] > 0 else 1.0,
+                "voltage_angle_rad":       float(scada[i, 1]) if scada.shape[1] > 1 else 0.0,
+                "equipment_temp_c":        float(scada[i, 5]) if scada.shape[1] > 5 else 25.0,
+                "frequency_hz":            float(scada[i, 6]) if scada.shape[1] > 6 else 60.0,
+                "equipment_condition":     float(scada[i, 8]) if scada.shape[1] > 8 else 1.0,
+            })
+
+        edges = []
+        for i, base in enumerate(self.topo.edges):
+            edges.append({
+                **base,
+                "active_flow_mw":     float(edge_attr[i, 5]) if edge_attr.shape[1] > 5 else 0.0,
+                "reactive_flow_mvar": float(edge_attr[i, 6]) if edge_attr.shape[1] > 6 else 0.0,
+                "thermal_limit_mw":   float(thermal_limits[i]),
+            })
+
+        return {"nodes": nodes, "edges": edges}
 
     def load_raw_scenario(self, scenario_id: int) -> Dict:
         """

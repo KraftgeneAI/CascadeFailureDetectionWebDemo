@@ -119,6 +119,7 @@ class PredictRequest(BaseModel):
 class CascadeRequest(BaseModel):
     scenario_id: int
     node_id: int
+    timestep: int = 0   # which timestep's grid state to use as starting conditions
 
 
 class CompareRequest(BaseModel):
@@ -198,7 +199,7 @@ def simulate_cascade(req: CascadeRequest):
                 status_code=422,
                 detail=f"node_id must be 0–{topo_service.num_nodes - 1}",
             )
-        result = cascade_service.simulate_cascade(req.scenario_id, req.node_id)
+        result = cascade_service.simulate_cascade(req.scenario_id, req.node_id, req.timestep)
         return _jsonable(result)
     except HTTPException:
         raise
