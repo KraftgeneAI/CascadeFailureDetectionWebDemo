@@ -438,27 +438,6 @@ export default function GridMap({
               />
             ))}
 
-            {/* Compare mode: predicted path arrows (before end_idx revealed) */}
-            {compareMode && compareData && currentFrame >= (compareData.end_idx ?? 0) &&
-              compareData.predicted_cascade_path.length >= 2 &&
-              [...compareData.predicted_cascade_path]
-                .sort((a, b) => a.order - b.order)
-                .slice(0, -1)
-                .map((step, i) => {
-                  const next = compareData.predicted_cascade_path[i + 1];
-                  if (!next) return null;
-                  const src = posById[step.node_id];
-                  const tgt = posById[next.node_id];
-                  if (!src || !tgt) return null;
-                  return (
-                    <line key={`pa-${i}`}
-                      x1={src.px} y1={src.py} x2={tgt.px} y2={tgt.py}
-                      stroke="#a855f7" strokeWidth={1.2} strokeOpacity={0.6}
-                      strokeDasharray="3 3"
-                    />
-                  );
-                })
-            }
 
             {/* Nodes */}
             {nodePos.map((node) => {
