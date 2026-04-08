@@ -2,23 +2,10 @@ import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 
 // ─── Colour helpers ───────────────────────────────────────────────────────────
 
-/**
- * Load stress colour — blue gradient from pale (low) to deep navy (high).
- * stress: 0 → #dbeafe (blue-100)
- * stress: 1 → #1e3a8a (blue-900)
- */
-function loadColour(stress) {
-  const t = Math.max(0, Math.min(1, stress));
-  const r = Math.round(219 - t * (219 - 30));
-  const g = Math.round(234 - t * (234 - 58));
-  const b = Math.round(254 - t * (254 - 138));
-  return `rgb(${r},${g},${b})`;
-}
-
-function nodeColour(node, loadStress = 0) {
+function nodeColour(node) {
   if (node.is_failed) return '#ef4444';
   if (node.power_injection_mw > 0) return '#22c55e';
-  return loadColour(loadStress);
+  return '#3b82f6'; // load node — fixed blue
 }
 
 function edgeColour(ratio) {
@@ -150,16 +137,12 @@ export default function GridMap({
     return m;
   }, [nodePos, nodeOffsets]);
 
-  // ── Load stress map: nodeId → stress ratio (0–1) ──────────────────
-  // Only load nodes (power_injection_mw ≤ 0) get a stress value.
-  // Normalised by the maximum absolute load seen across all load nodes
-  // in the current frame so the colour scale is always relative.
-  const loadStressMap = useMemo(() => {
-    const loads = nodes.filter((n) => n.power_injection_mw <= 0);
-    const maxLoad = loads.reduce((mx, n) => Math.max(mx, Math.abs(n.power_injection_mw)), 1e-6);
-    const m = {};
-    loads.forEach((n) => { m[n.id] = Math.abs(n.power_injection_mw) / maxLoad; });
-    return m;
+  // ── Grid stats (total generation / load) ─────────────────────────
+  const gridStats = useMemo(() => {
+    const totalGen  = nodes.reduce((s, n) => s + (n.power_injection_mw > 0 ? n.power_injection_mw : 0), 0);
+    const totalLoad = nodes.reduce((s, n) => s + (n.power_injection_mw < 0 ? Math.abs(n.power_injection_mw) : 0), 0);
+    const failedCount = nodes.filter((n) => n.is_failed).length;
+    return { totalGen, totalLoad, failedCount };
   }, [nodes]);
 
   // ── Cascade (click-to-fail) overlay ───────────────────────────────
@@ -373,6 +356,53 @@ export default function GridMap({
   return (
     <div className="w-full h-full flex flex-col">
 
+      {/* ── Grid stats bar ──────────────────────────────────────────── */}
+      <div className="shrink-0 flex items-center gap-6 px-4 py-2 bg-gray-900 border-b border-gray-800 text-xs">
+        <StatPill
+          label="Generation"
+          value={`${gridStats.totalGen.toFixed(0)} MW`}
+          colour="text-green-400"
+        />
+        <StatPill
+          label="Load"
+          value={`${gridStats.totalLoad.toFixed(0)} MW`}
+          colour="text-blue-400"
+        />
+        <StatPill
+          label="Balance"
+          value={`${(gridStats.totalGen - gridStats.totalLoad).toFixed(0)} MW`}
+          colour={(gridStats.totalGen - gridStats.totalLoad) >= 0 ? 'text-green-400' : 'text-red-400'}
+        />
+        {gridStats.failedCount > 0 && (
+          <StatPill
+            label="Failed nodes"
+            value={String(gridStats.failedCount)}
+            colour="text-red-400"
+          />
+        )}
+
+        {/* ── Compare-mode prediction summary (shown after end_idx) ── */}
+        {compareMode && compareData && currentFrame >= compareData.end_idx && (() => {
+          const predicted   = compareData.predicted_cascade_path.length;
+          const actualCount = [...predictedNodeIds].filter((id) => revealedGtNodeIds.has(id)).length;
+          return (
+            <>
+              <span className="w-px h-4 bg-gray-700 mx-1" />
+              <StatPill
+                label="Predicted failures"
+                value={String(predicted)}
+                colour="text-purple-400"
+              />
+              <StatPill
+                label="Actually failing"
+                value={`${actualCount} / ${predicted}`}
+                colour={actualCount > 0 ? 'text-cyan-400' : 'text-gray-400'}
+              />
+            </>
+          );
+        })()}
+      </div>
+
       {/* ── SVG canvas ──────────────────────────────────────────────── */}
       <div
         ref={containerRef}
@@ -455,7 +485,7 @@ export default function GridMap({
 
               const colour = overrideColour ?? (inCascade
                 ? cascadeNodeColour(cascadeStep.order, totalCascadeFailures)
-                : nodeColour(node, loadStressMap[node.id] ?? 0));
+                : nodeColour(node));
 
               const off = nodeOffsets[node.id] ?? { dx: 0, dy: 0 };
 
@@ -517,8 +547,7 @@ export default function GridMap({
                 tooltip.node.power_injection_mw > 0 ? 'text-green-400' : 'text-blue-400'
               }>
                 {tooltip.node.is_failed ? 'Failed' :
-                 tooltip.node.power_injection_mw > 0 ? 'Generator' :
-                 `Load ${Math.round((loadStressMap[tooltip.node.id] ?? 0) * 100)}%`}
+                 tooltip.node.power_injection_mw > 0 ? 'Generator' : 'Load'}
               </span>
             </div>
             {tooltip.cascadeStep && (
@@ -570,7 +599,7 @@ export default function GridMap({
         <div className="absolute bottom-4 right-4 bg-gray-900 bg-opacity-90 rounded p-3 text-xs space-y-1 border border-gray-700">
           <p className="text-gray-400 font-semibold mb-1">Nodes</p>
           <LegendDot colour="#22c55e" label="Generator" />
-          <LegendLoadGradient />
+          <LegendDot colour="#3b82f6" label="Load" />
           <LegendDot colour="#ef4444" label="Failed" />
           {compareMode && compareData && (
             <>
@@ -778,23 +807,23 @@ function LegendLine({ colour, label }) {
   );
 }
 
-/** Small blue gradient bar showing low → high load stress. */
-function LegendLoadGradient() {
-  return (
-    <div className="flex items-center gap-2">
-      <div className="w-12 h-3 rounded"
-        style={{ background: 'linear-gradient(to right, #dbeafe, #1e3a8a)' }} />
-      <span className="text-gray-300">Load (lo→hi)</span>
-    </div>
-  );
-}
-
 function LegendLineDashed({ colour, label }) {
   return (
     <div className="flex items-center gap-2">
       <span className="inline-block w-5 h-0"
         style={{ borderTop: `2px dashed ${colour}`, opacity: 0.8 }} />
       <span className="text-gray-300">{label}</span>
+    </div>
+  );
+}
+
+// ─── Stats pill ───────────────────────────────────────────────────────────────
+
+function StatPill({ label, value, colour }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-gray-500">{label}</span>
+      <span className={`font-mono font-semibold ${colour}`}>{value}</span>
     </div>
   );
 }
