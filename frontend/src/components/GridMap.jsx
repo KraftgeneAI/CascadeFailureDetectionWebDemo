@@ -593,16 +593,12 @@ export default function GridMap({
           <LegendDot colour="#22c55e" label="Generator" />
           <LegendLoadGradient />
           <LegendDot colour="#ef4444" label="Failed" />
-          {compareMode && compareData && currentFrame >= (compareData.end_idx ?? 0) && (
+          {compareMode && compareData && (
             <>
               <p className="text-gray-400 font-semibold mt-2 mb-1">Prediction</p>
               <LegendDot colour="#06b6d4" label="Correctly predicted" />
               <LegendDot colour="#ef4444" label="Actual failure" />
               <LegendDot colour="#9ca3af" label="False alarm" />
-              <div className="flex items-center gap-2">
-                <span className="inline-block w-3 h-3 rounded-full border-2 border-purple-500" style={{ background: 'transparent' }} />
-                <span className="text-gray-300">Predicted (unconfirmed)</span>
-              </div>
             </>
           )}
           {!compareMode && totalCascadeFailures > 0 && (
@@ -665,8 +661,6 @@ export default function GridMap({
           <TimelineBar
             total={totalFrames}
             current={currentFrame}
-            startIdx={compareData.start_idx}
-            endIdx={compareData.end_idx}
             cascadeStart={compareData.cascade_start_time}
             onChange={(f) => { stopAnimation(); onFrameChange(f); }}
           />
@@ -691,12 +685,16 @@ export default function GridMap({
               t = {currentFrame + 1} / {totalFrames}
             </span>
 
-            {/* Zone label */}
-            <ZoneLabel
-              frame={currentFrame}
-              startIdx={compareData.start_idx}
-              endIdx={compareData.end_idx}
-            />
+            {/* Predicted-ahead badge */}
+            {compareData.cascade_detected && compareData.cascade_start_time >= 0 && (() => {
+              const stepsAhead = compareData.cascade_start_time - compareData.end_idx;
+              if (stepsAhead <= 0) return null;
+              return (
+                <span className="px-2 py-0.5 rounded bg-cyan-900 text-cyan-300 text-xs font-semibold">
+                  ⚡ Predicted {stepsAhead} step{stepsAhead !== 1 ? 's' : ''} in advance
+                </span>
+              );
+            })()}
 
             {/* Speed selector */}
             <div className="ml-auto flex items-center gap-1">
@@ -720,7 +718,7 @@ export default function GridMap({
 
 // ─── Timeline bar ─────────────────────────────────────────────────────────────
 
-function TimelineBar({ total, current, startIdx, endIdx, cascadeStart, onChange }) {
+function TimelineBar({ total, current, cascadeStart, onChange }) {
   const pct = (i) => `${(i / total) * 100}%`;
 
   function handleClick(e) {
@@ -732,24 +730,13 @@ function TimelineBar({ total, current, startIdx, endIdx, cascadeStart, onChange 
   return (
     <div className="relative h-5 cursor-pointer" onClick={handleClick}>
       {/* Background track */}
-      <div className="absolute inset-y-0 left-0 right-0 rounded overflow-hidden flex">
-        {/* Before window — grey */}
-        <div className="h-full bg-gray-700" style={{ width: pct(startIdx) }} />
-        {/* Model input window — blue */}
-        <div className="h-full bg-blue-900" style={{ width: pct(endIdx - startIdx) }} />
-        {/* Post-truncation — orange */}
-        <div className="h-full bg-orange-950 flex-1" />
-      </div>
+      <div className="absolute inset-y-0 left-0 right-0 rounded bg-gray-700" />
 
-      {/* Cascade start marker */}
+      {/* Cascade start marker — only landmark an investor cares about */}
       {cascadeStart >= 0 && (
         <div className="absolute top-0 bottom-0 w-0.5 bg-red-500 opacity-80"
-          style={{ left: pct(cascadeStart) }} title={`Cascade start (t=${cascadeStart})`} />
+          style={{ left: pct(cascadeStart) }} title={`Cascade begins at t=${cascadeStart + 1}`} />
       )}
-
-      {/* End-of-model-window marker */}
-      <div className="absolute top-0 bottom-0 w-0.5 bg-white opacity-50"
-        style={{ left: pct(endIdx) }} />
 
       {/* Playhead */}
       <div className="absolute top-0 bottom-0 w-1 bg-white rounded"
@@ -790,14 +777,6 @@ function NormalTimelineBar({ total, current, cascadeStart, onChange }) {
       />
     </div>
   );
-}
-
-// ─── Zone label ───────────────────────────────────────────────────────────────
-
-function ZoneLabel({ frame, startIdx, endIdx }) {
-  if (frame < startIdx) return <span className="text-xs text-gray-500">Before window</span>;
-  if (frame < endIdx)   return <span className="text-xs text-blue-400 font-semibold">Model input</span>;
-  return <span className="text-xs text-orange-400 font-semibold">Ground truth</span>;
 }
 
 // ─── Legend helpers ───────────────────────────────────────────────────────────
