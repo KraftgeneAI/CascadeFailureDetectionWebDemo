@@ -492,8 +492,8 @@ export default function GridMap({
               return (
                 <g key={node.id}
                   transform={`translate(${node.px + off.dx},${node.py + off.dy})`}
-                  style={{ cursor: compareMode ? 'default' : 'grab' }}
-                  onMouseDown={(e) => !compareMode && handleNodeMouseDown(e, node)}
+                  style={{ cursor: 'grab' }}
+                  onMouseDown={(e) => handleNodeMouseDown(e, node)}
                   onClick={(e) => !compareMode && handleNodeClick(e, node)}
                   onMouseEnter={(e) => showTooltip(e, node)}
                   onMouseLeave={() => setTooltip(null)}
