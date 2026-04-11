@@ -5,7 +5,7 @@
  * "proxy": "http://localhost:8000" in development).
  */
 
-const BASE = '/api';
+const BASE = 'https://api.energyeminence.online/api';
 
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
