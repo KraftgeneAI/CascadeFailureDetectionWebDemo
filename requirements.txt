@@ -1,0 +1,28 @@
+# Power Grid Digital Twin — backend dependencies
+# Install with:  pip install -r requirements.txt
+
+# Web framework
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+
+# Data validation (bundled with FastAPI, pinned for clarity)
+pydantic>=2.0.0
+
+# --- cascade_prediction library requirements (mirrors CascadeFailureDetection/requirements.txt) ---
+
+# Deep learning
+torch>=1.12.0
+torch-geometric>=2.0.0
+
+# Power system simulation (used by PhysicsBasedGridSimulator)
+pypsa>=0.25.0
+
+# Numerics
+numpy>=1.21.0
+scipy>=1.7.0
+pandas>=1.3.0
+
+# Utilities
+tqdm>=4.62.0
+psutil>=5.8.0
+networkx>=2.6.0
