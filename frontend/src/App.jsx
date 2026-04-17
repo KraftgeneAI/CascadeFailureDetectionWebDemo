@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { Sun, Moon } from 'lucide-react';
 import ScenarioSelector from './components/ScenarioSelector';
 import GridMap from './components/GridMap';
 import NodePanel from './components/NodePanel';
@@ -8,6 +9,17 @@ import { simulateCascade, compareScenario } from './api';
 export default function App() {
   const [scenario, setScenario] = useState(null);
   const [selectedNode, setSelectedNode] = useState(null);
+
+  // ── Dark Mode State ──────────────────────────────────────────────────
+  const [isDarkMode, setIsDarkMode] = useState(true);
+
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [isDarkMode]);
 
   // ── Cascade simulation (click-to-fail) ──────────────────────────────
   const [cascadeResult, setCascadeResult] = useState(null);
@@ -104,37 +116,48 @@ export default function App() {
   const isCompareAvailable = scenario?.metadata?.is_cascade === true;
 
   return (
-    <div className="flex flex-col h-full bg-gray-950 text-gray-100">
+    <div className="flex flex-col h-full bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 transition-colors duration-300">
 
       {/* ── Header ───────────────────────────────────────────────────── */}
-      <header className="flex items-center gap-4 px-6 py-3 bg-gray-900 border-b border-gray-800 shrink-0">
-        <span className="text-lg font-semibold tracking-wide text-white">
+      <header className="flex items-center gap-4 px-6 py-3 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 shrink-0 transition-colors duration-300">
+        <span className="text-lg font-semibold tracking-wide text-gray-900 dark:text-white">
           ⚡ Power Grid Digital Twin
         </span>
-        <span className="text-xs text-gray-500">IEEE 118-Bus</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400">IEEE 118-Bus</span>
 
         <div className="ml-auto flex items-center gap-3">
           {/* Status messages */}
           {cascadeLoading && !compareMode && (
-            <span className="text-xs text-orange-400 animate-pulse">
+            <span className="text-xs text-orange-500 dark:text-orange-400 animate-pulse">
               Simulating cascade…
             </span>
           )}
           {cascadeError && !compareMode && (
-            <span className="text-xs text-red-400">
+            <span className="text-xs text-red-600 dark:text-red-400">
               Cascade error: {cascadeError}
             </span>
           )}
           {compareLoading && (
-            <span className="text-xs text-blue-400 animate-pulse">
+            <span className="text-xs text-blue-600 dark:text-blue-400 animate-pulse">
               Running model prediction…
             </span>
           )}
           {compareError && (
-            <span className="text-xs text-red-400">
+            <span className="text-xs text-red-600 dark:text-red-400">
               Compare error: {compareError}
             </span>
           )}
+
+          {/* Theme Toggle */}
+          <button
+            onClick={() => setIsDarkMode(!isDarkMode)}
+            className="p-1.5 rounded-md text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-white dark:hover:bg-gray-800 transition-colors"
+            aria-label="Toggle Dark Mode"
+          >
+            {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+          </button>
+
+          {isCompareAvailable && <div className="h-5 w-px bg-gray-300 dark:bg-gray-700 mx-1"></div>}
 
           {/* Compare toggle — only shown for cascade scenarios */}
           {isCompareAvailable && (
@@ -143,8 +166,8 @@ export default function App() {
               disabled={compareLoading}
               className={`px-3 py-1.5 rounded text-xs font-semibold transition-colors ${
                 compareMode
-                  ? 'bg-purple-700 text-white hover:bg-purple-600'
-                  : 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                  ? 'bg-purple-600 text-white hover:bg-purple-700'
+                  : 'bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
               } disabled:opacity-50 disabled:cursor-not-allowed`}
             >
               {compareMode ? '✕ Exit Compare' : '⬡ Model vs Reality'}
@@ -157,8 +180,8 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden">
 
         {/* ── Left sidebar ─────────────────────────────────────────── */}
-        <aside className="flex flex-col w-96 shrink-0 border-r border-gray-800 bg-gray-900 overflow-y-auto">
-          <div className="p-4 border-b border-gray-800">
+        <aside className="flex flex-col w-96 shrink-0 border-r border-gray-200 dark:border-gray-800 bg-gray-50 dark:bg-gray-900 overflow-y-auto transition-colors duration-300">
+          <div className="p-4 border-b border-gray-200 dark:border-gray-800">
             <ScenarioSelector onScenarioLoad={handleScenarioLoad} />
           </div>
           <div className="flex-1 p-4">
@@ -179,7 +202,7 @@ export default function App() {
         </aside>
 
         {/* ── Main grid area ───────────────────────────────────────── */}
-        <main className="flex-1 overflow-hidden relative">
+        <main className="flex-1 overflow-hidden relative bg-white dark:bg-gray-950 transition-colors duration-300">
           {activeGridState ? (
             <GridMap
               scenario={{ ...scenario, grid_state: activeGridState }}
@@ -197,7 +220,7 @@ export default function App() {
               onFrameChange={setCurrentFrame}
             />
           ) : (
-            <div className="flex items-center justify-center h-full text-gray-600 text-sm">
+            <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-600 text-sm">
               Select a scenario to visualise the grid
             </div>
           )}
