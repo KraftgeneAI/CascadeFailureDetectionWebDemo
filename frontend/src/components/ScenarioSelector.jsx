@@ -1,19 +1,12 @@
 import { useEffect, useState } from 'react';
 import { fetchScenarios, fetchScenario } from '../api';
 
-/**
- * ScenarioSelector
- * ----------------
- * Fetches the list of scenarios on mount, renders a dropdown, and calls
- * onScenarioLoad(scenarioDetail) when the user picks one.
- */
 export default function ScenarioSelector({ onScenarioLoad }) {
   const [scenarios, setScenarios] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  // Fetch scenario list once on mount
   useEffect(() => {
     fetchScenarios()
       .then(setScenarios)
@@ -44,7 +37,7 @@ export default function ScenarioSelector({ onScenarioLoad }) {
       </h2>
 
       <select
-        className="w-full bg-gray-800 border border-gray-700 text-gray-100 text-sm rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        className="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 text-gray-900 dark:text-gray-100 text-sm rounded px-3 py-2 focus:outline-none focus:ring-1 focus:ring-blue-500 transition-colors"
         value={selectedId}
         onChange={handleChange}
       >
@@ -59,24 +52,23 @@ export default function ScenarioSelector({ onScenarioLoad }) {
       </select>
 
       {loading && (
-        <p className="text-xs text-blue-400 animate-pulse">Loading scenario…</p>
+        <p className="text-xs text-blue-500 dark:text-blue-400 animate-pulse">Loading scenario…</p>
       )}
       {error && (
-        <p className="text-xs text-red-400">{error}</p>
+        <p className="text-xs text-red-500 dark:text-red-400">{error}</p>
       )}
 
-      {/* Metadata badge strip */}
       {selected && !loading && (
         <div className="grid grid-cols-2 gap-2 text-xs">
           <MetaBadge
             label="Type"
             value={selected.is_cascade ? 'Cascade' : 'Normal'}
-            colour={selected.is_cascade ? 'text-red-400' : 'text-green-400'}
+            colour={selected.is_cascade ? 'text-red-600 dark:text-red-400' : 'text-green-600 dark:text-green-400'}
           />
           <MetaBadge
             label="Stress"
             value={`${(selected.stress_level * 100).toFixed(1)}%`}
-            colour="text-yellow-400"
+            colour="text-yellow-600 dark:text-yellow-400"
           />
         </div>
       )}
@@ -86,8 +78,8 @@ export default function ScenarioSelector({ onScenarioLoad }) {
 
 function MetaBadge({ label, value, colour }) {
   return (
-    <div className="bg-gray-800 rounded px-2 py-1">
-      <p className="text-gray-500 text-xs">{label}</p>
+    <div className="bg-gray-100 dark:bg-gray-800 rounded px-2 py-1 transition-colors">
+      <p className="text-gray-500 dark:text-gray-400 text-xs">{label}</p>
       <p className={`font-semibold ${colour}`}>{value}</p>
     </div>
   );
