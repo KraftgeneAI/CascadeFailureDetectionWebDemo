@@ -569,30 +569,42 @@ export default function GridMap({
 
       {/* ── Normal-mode timeline ────────────────────────────────────── */}
       {!compareMode && totalNormalFrames > 1 && (
-        <div className="shrink-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 px-4 py-3 space-y-2 transition-colors duration-300">
+        <div className="shrink-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 px-4 py-3 space-y-3 transition-colors duration-300">
           <NormalTimelineBar
             total={totalNormalFrames}
             current={normalFrame}
             cascadeStart={scenario?.metadata?.cascade_start_time ?? -1}
             onChange={onNormalFrameChange}
           />
-          <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400">
-            <button
-              onClick={() => onNormalFrameChange(Math.max(0, normalFrame - 1))}
-              disabled={normalFrame === 0}
-              className="w-7 h-7 flex items-center justify-center rounded bg-gray-200 hover:bg-gray-300 text-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700 dark:text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              ‹
-            </button>
-            <button
-              onClick={() => onNormalFrameChange(Math.min(totalNormalFrames - 1, normalFrame + 1))}
-              disabled={normalFrame === totalNormalFrames - 1}
-              className="w-7 h-7 flex items-center justify-center rounded bg-gray-200 hover:bg-gray-300 text-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700 dark:text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-            >
-              ›
-            </button>
-            <span className="font-mono">t = {normalFrame + 1} / {totalNormalFrames}</span>
-            <span className="ml-auto text-gray-400 dark:text-gray-600">Click a node to simulate cascade from this timestep</span>
+          <div className="flex items-center justify-between text-xs">
+            {/* Left side: Controls */}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => onNormalFrameChange(Math.max(0, normalFrame - 1))}
+                disabled={normalFrame === 0}
+                className="w-7 h-7 flex items-center justify-center rounded bg-gray-200 hover:bg-gray-300 text-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700 dark:text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                ‹
+              </button>
+              <button
+                onClick={() => onNormalFrameChange(Math.min(totalNormalFrames - 1, normalFrame + 1))}
+                disabled={normalFrame === totalNormalFrames - 1}
+                className="w-7 h-7 flex items-center justify-center rounded bg-gray-200 hover:bg-gray-300 text-gray-700 dark:bg-gray-800 dark:hover:bg-gray-700 dark:text-gray-300 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              >
+                ›
+              </button>
+              <span className="font-mono text-gray-700 dark:text-gray-300 font-medium">
+                t = {normalFrame + 1} / {totalNormalFrames}
+              </span>
+            </div>
+
+            {/* Right side: Upgraded Action Badge */}
+            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800/50 shadow-sm transition-colors">
+              <span className="text-blue-500 dark:text-blue-400 text-sm leading-none">👆</span>
+              <span className="text-blue-700 dark:text-blue-300 font-medium">
+                Drag timeline to adjust time, then click a node to trigger a cascade
+              </span>
+            </div>
           </div>
         </div>
       )}
@@ -654,27 +666,57 @@ export default function GridMap({
   );
 }
 
-// ─── Timeline bar ─────────────────────────────────────────────────────────────
+// ─── Timeline bar (Compare Mode) ──────────────────────────────────────────────
 
 function TimelineBar({ total, current, cascadeStart, onChange }) {
+  const trackRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
+
   const pct = (i) => `${(i / total) * 100}%`;
 
-  function handleClick(e) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  const calculateAndSetFrame = useCallback((clientX) => {
+    if (!trackRef.current) return;
+    const rect = trackRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
+    const ratio = x / rect.width;
     onChange(Math.round(ratio * (total - 1)));
-  }
+  }, [total, onChange]);
+
+  const handleMouseDown = (e) => {
+    setIsDragging(true);
+    calculateAndSetFrame(e.clientX);
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (isDragging) calculateAndSetFrame(e.clientX);
+    };
+    const handleMouseUp = () => setIsDragging(false);
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, calculateAndSetFrame]);
 
   return (
-    <div className="relative h-5 cursor-pointer" onClick={handleClick}>
-      <div className="absolute inset-y-0 left-0 right-0 rounded bg-gray-200 dark:bg-gray-700 transition-colors" />
+    <div 
+      ref={trackRef}
+      className="relative h-5 cursor-pointer select-none py-1" 
+      onMouseDown={handleMouseDown}
+    >
+      <div className="absolute inset-y-1 left-0 right-0 rounded bg-gray-200 dark:bg-gray-700 transition-colors pointer-events-none" />
 
       {cascadeStart >= 0 && (
-        <div className="absolute top-0 bottom-0 w-0.5 bg-red-500 opacity-80"
+        <div className="absolute top-1 bottom-1 w-0.5 bg-red-500 opacity-80 pointer-events-none"
           style={{ left: pct(cascadeStart) }} title={`Cascade begins at t=${cascadeStart + 1}`} />
       )}
 
-      <div className="absolute top-0 bottom-0 w-1 bg-gray-800 dark:bg-white rounded transition-colors"
+      <div className="absolute top-0 bottom-0 w-1.5 bg-gray-800 dark:bg-white rounded transition-colors shadow-sm pointer-events-none"
         style={{ left: pct(current), transform: 'translateX(-50%)' }} />
     </div>
   );
@@ -683,28 +725,58 @@ function TimelineBar({ total, current, cascadeStart, onChange }) {
 // ─── Normal-mode timeline bar ─────────────────────────────────────────────────
 
 function NormalTimelineBar({ total, current, cascadeStart, onChange }) {
+  const trackRef = useRef(null);
+  const [isDragging, setIsDragging] = useState(false);
+
   const pct = (i) => `${(i / total) * 100}%`;
 
-  function handleClick(e) {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  const calculateAndSetFrame = useCallback((clientX) => {
+    if (!trackRef.current) return;
+    const rect = trackRef.current.getBoundingClientRect();
+    const x = Math.max(0, Math.min(clientX - rect.left, rect.width));
+    const ratio = x / rect.width;
     onChange(Math.round(ratio * (total - 1)));
-  }
+  }, [total, onChange]);
+
+  const handleMouseDown = (e) => {
+    setIsDragging(true);
+    calculateAndSetFrame(e.clientX);
+  };
+
+  useEffect(() => {
+    const handleMouseMove = (e) => {
+      if (isDragging) calculateAndSetFrame(e.clientX);
+    };
+    const handleMouseUp = () => setIsDragging(false);
+
+    if (isDragging) {
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+    }
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isDragging, calculateAndSetFrame]);
 
   return (
-    <div className="relative h-5 cursor-pointer" onClick={handleClick}>
-      <div className="absolute inset-y-0 left-0 right-0 rounded overflow-hidden bg-gray-200 dark:bg-gray-700 transition-colors" />
+    <div 
+      ref={trackRef}
+      className="relative h-5 cursor-pointer select-none py-1" 
+      onMouseDown={handleMouseDown}
+    >
+      <div className="absolute inset-y-1 left-0 right-0 rounded overflow-hidden bg-gray-200 dark:bg-gray-700 transition-colors pointer-events-none" />
 
       {cascadeStart >= 0 && cascadeStart < total && (
         <div
-          className="absolute top-0 bottom-0 w-0.5 bg-red-500 opacity-70"
+          className="absolute top-1 bottom-1 w-0.5 bg-red-500 opacity-70 pointer-events-none"
           style={{ left: pct(cascadeStart) }}
           title={`Cascade starts at t=${cascadeStart + 1}`}
         />
       )}
 
       <div
-        className="absolute top-0 bottom-0 w-1 bg-blue-500 dark:bg-blue-400 rounded transition-colors"
+        className="absolute top-0 bottom-0 w-1.5 bg-blue-500 dark:bg-blue-400 rounded transition-colors shadow-sm pointer-events-none"
         style={{ left: pct(current), transform: 'translateX(-50%)' }}
       />
     </div>
