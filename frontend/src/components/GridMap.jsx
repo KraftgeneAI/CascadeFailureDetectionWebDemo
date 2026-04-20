@@ -1,4 +1,5 @@
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
+import EnvironmentalVideoFeed from './EnvironmentalVideoFeed';
 
 // ─── Colour helpers ───────────────────────────────────────────────────────────
 
@@ -300,6 +301,10 @@ export default function GridMap({
     return null; 
   }
 
+  // Define active frames for video and fire synchronization
+  const activeCurrentFrame = compareMode ? currentFrame : normalFrame;
+  const activeTotalFrames = compareMode ? totalFrames : totalNormalFrames;
+
   return (
     <div className="w-full h-full flex flex-col">
 
@@ -350,7 +355,7 @@ export default function GridMap({
         })()}
       </div>
 
-      {/* ── SVG canvas ──────────────────────────────────────────────── */}
+      {/* ── SVG canvas and Video Container ───────────────────────────── */}
       <div
         ref={containerRef}
         className="flex-1 relative cursor-grab active:cursor-grabbing select-none overflow-hidden bg-white dark:bg-gray-950 transition-colors duration-300"
@@ -359,6 +364,20 @@ export default function GridMap({
         onMouseUp={onMouseUp}
         onMouseLeave={onMouseUp}
       >
+        {/* Video feed placed OUTSIDE the SVG, but INSIDE the relative container */}
+        {(() => {
+          const isCascadeScenario = scenario?.is_cascade || compareMode || totalCascadeFailures > 0 || scenario?.id === 2;
+          
+          if (activeTotalFrames <= 1 || !isCascadeScenario) return null;
+
+          return (
+            <EnvironmentalVideoFeed 
+              currentFrame={activeCurrentFrame} 
+              totalFrames={activeTotalFrames} 
+            />
+          );
+        })()}
+
         <svg
           ref={svgRef}
           width="100%"
@@ -433,6 +452,21 @@ export default function GridMap({
 
               const off = nodeOffsets[node.id] ?? { dx: 0, dy: 0 };
 
+              // --- Fire Animation Logic ---
+              // Find the trigger node to apply the fire effect to.
+              const triggerNodeId = compareMode
+                ? (compareData?.ground_truth_cascade_path?.[0]?.node_id || compareData?.predicted_cascade_path?.[0]?.node_id || 15)
+                : (cascadeResult?.cascade_path?.find(s => s.is_trigger)?.node_id || 15);
+              
+              const fireStartFrame = compareMode 
+                ? (compareData?.cascade_start_time ?? 10) 
+                : (scenario?.metadata?.cascade_start_time ?? 10);
+                
+              const isCascadeScenario = scenario?.is_cascade || compareMode || scenario?.id === 2;
+              
+              // Only catch fire if it's the trigger node, the scenario is a cascade, and we've reached the start frame
+              const isNodeOnFire = node.id === triggerNodeId && activeCurrentFrame >= fireStartFrame && isCascadeScenario;
+
               return (
                 <g key={node.id}
                   transform={`translate(${node.px + off.dx},${node.py + off.dy})`}
@@ -442,6 +476,17 @@ export default function GridMap({
                   onMouseEnter={(e) => showTooltip(e, node)}
                   onMouseLeave={() => setTooltip(null)}
                 >
+                  {/* The Fire Animation Overlay */}
+                  {isNodeOnFire && (
+                    <g className="pointer-events-none">
+                      <circle r={14} fill="none" stroke="#f97316" strokeWidth={3} className="animate-ping opacity-75" />
+                      <circle r={12} fill="none" stroke="#ef4444" strokeWidth={2} />
+                      <text dy="-8" dx="6" fontSize="14" style={{ textShadow: '0px 2px 4px rgba(0,0,0,0.8)' }}>
+                        🔥
+                      </text>
+                    </g>
+                  )}
+
                   {showPurpleRing && (
                     <circle r={11} fill="none" stroke="#a855f7" strokeWidth={2} strokeOpacity={0.8} />
                   )}
