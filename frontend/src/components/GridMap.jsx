@@ -145,6 +145,20 @@ export default function GridMap({
     return new Set(compareData.predicted_cascade_path.map((s) => s.node_id));
   }, [compareData]);
 
+  // Sequential rollout arrows: parent_id -> node_id for each step in cascade_sequence
+  const seqArrows = useMemo(() => {
+    if (!compareMode || !compareData?.cascade_sequence?.length) return [];
+    return compareData.cascade_sequence
+      .filter((s) => s.parent_id != null)
+      .map((s) => {
+        const src = posById[s.parent_id];
+        const tgt = posById[s.node_id];
+        if (!src || !tgt) return null;
+        return { x1: src.px, y1: src.py, x2: tgt.px, y2: tgt.py, score: s.ranking_score };
+      })
+      .filter(Boolean);
+  }, [compareMode, compareData, posById]);
+
   const revealedGtNodeIds = useMemo(() => {
     if (!compareData || !compareMode) return new Set();
     return new Set(
@@ -390,6 +404,9 @@ export default function GridMap({
             <marker id="cascade-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
               <path d="M0,0 L0,6 L6,3 z" fill="#ff6600" opacity="0.85" />
             </marker>
+            <marker id="seq-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L6,3 z" fill="#a855f7" opacity="0.9" />
+            </marker>
           </defs>
 
           <g transform={`translate(${transform.x},${transform.y}) scale(${transform.k})`}>
@@ -425,12 +442,21 @@ export default function GridMap({
               );
             })}
 
-            {/* Cascade arrows */}
+            {/* Cascade arrows (physics simulation) */}
             {cascadeArrows.map((a, i) => (
               <line key={`ca-${i}`}
                 x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
                 stroke="#ff6600" strokeWidth={1.5} strokeOpacity={0.75}
                 strokeDasharray="4 3" markerEnd="url(#cascade-arrow)"
+              />
+            ))}
+
+            {/* Sequential rollout arrows (GNN causal chain, compare mode only) */}
+            {seqArrows.map((a, i) => (
+              <line key={`seq-${i}`}
+                x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
+                stroke="#a855f7" strokeWidth={1.5} strokeOpacity={0.8}
+                strokeDasharray="6 3" markerEnd="url(#seq-arrow)"
               />
             ))}
 
@@ -607,6 +633,9 @@ export default function GridMap({
           <LegendLine colour="#f97316" label="75 – 100 %" />
           <LegendLine colour="#ef4444" label="> 100 %" />
           <LegendLineDashed colour="#4b5563" label="Disconnected" />
+          {compareMode && seqArrows.length > 0 && (
+            <LegendLineDashed colour="#a855f7" label="AI causal chain" />
+          )}
           {!compareMode && <p className="text-gray-500 dark:text-gray-600 mt-2">Click node to simulate cascade</p>}
           <p className="text-gray-500 dark:text-gray-600">Scroll to zoom · drag to pan</p>
         </div>

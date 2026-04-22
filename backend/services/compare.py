@@ -152,6 +152,7 @@ class CompareService:
             'cascade_probability': float(pred.get('cascade_probability', 0.0)),
             'cascade_detected': bool(pred.get('cascade_detected', False)),
             'predicted_cascade_path': predicted_path,
+            'cascade_sequence': pred.get('cascade_sequence', []),
             'ground_truth_cascade_path': gt_path,
             'metrics': {
                 'true_positives':  tp,
