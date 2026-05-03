@@ -8,7 +8,6 @@ export default function ComparisonPanel({ compareData, currentFrame }) {
     cascade_detected,
     metrics,
     predicted_cascade_path,
-    cascade_sequence = [],
     ground_truth_cascade_path,
   } = compareData;
 
@@ -145,11 +144,6 @@ export default function ComparisonPanel({ compareData, currentFrame }) {
         </div>
       )}
 
-      {/* ── AI Causal Chain ───────────────────────────────────────────── */}
-      {cascade_sequence.length > 0 && (
-        <CausalChain sequence={cascade_sequence} />
-      )}
-
       {/* ── What Actually Happened ─────────────────────────────────────── */}
       {ground_truth_cascade_path.length > 0 && (
         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-transparent shadow-sm dark:shadow-none rounded p-3 space-y-2 transition-colors">
@@ -181,91 +175,6 @@ export default function ComparisonPanel({ compareData, currentFrame }) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-// ── CausalChain ───────────────────────────────────────────────────────────────
-
-function CausalChain({ sequence }) {
-  const steps = [...sequence].sort((a, b) => a.order - b.order);
-
-  return (
-    <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-transparent shadow-sm dark:shadow-none rounded p-3 space-y-2 transition-colors">
-      <div className="flex items-center justify-between">
-        <p className="text-purple-600 dark:text-purple-400 font-semibold">AI Causal Chain</p>
-        <span className="text-gray-500 dark:text-gray-500">{steps.length} step{steps.length !== 1 ? 's' : ''}</span>
-      </div>
-
-      <div className="max-h-64 overflow-y-auto space-y-0 pr-1">
-        {steps.map((step, idx) => {
-          const isTrigger = step.parent_id == null;
-          const pct = Math.round(step.ranking_score * 100);
-          const barColour = pct >= 70 ? '#ef4444' : pct >= 40 ? '#f97316' : '#a855f7';
-
-          return (
-            <div key={step.order}>
-              {/* Connector line between steps */}
-              {idx > 0 && (
-                <div className="flex items-center ml-3.5">
-                  <div className="w-px h-3 bg-purple-300 dark:bg-purple-700" />
-                </div>
-              )}
-
-              <div className={`flex items-start gap-2 rounded px-2 py-1.5 transition-colors ${
-                isTrigger
-                  ? 'bg-red-50 dark:bg-red-950'
-                  : 'bg-purple-50 dark:bg-purple-950/40'
-              }`}>
-                {/* Order badge */}
-                <span className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold ${
-                  isTrigger
-                    ? 'bg-red-500 text-white'
-                    : 'bg-purple-500 text-white'
-                }`}>
-                  {step.order}
-                </span>
-
-                <div className="flex-1 min-w-0 space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="font-semibold text-gray-900 dark:text-white">
-                      Node {step.node_id}
-                    </span>
-                    <span className="text-gray-500 dark:text-gray-400 font-mono">
-                      {step.pred_time_minutes.toFixed(1)} min
-                    </span>
-                  </div>
-
-                  {/* Parent tag */}
-                  {!isTrigger && (
-                    <p className="text-purple-600 dark:text-purple-400 text-xs">
-                      ← caused by Node {step.parent_id}
-                    </p>
-                  )}
-                  {isTrigger && (
-                    <p className="text-red-500 dark:text-red-400 text-xs font-semibold">
-                      trigger
-                    </p>
-                  )}
-
-                  {/* Confidence bar */}
-                  <div className="flex items-center gap-1.5">
-                    <div className="flex-1 h-1 bg-gray-200 dark:bg-gray-700 rounded overflow-hidden">
-                      <div
-                        className="h-full rounded transition-all"
-                        style={{ width: `${pct}%`, background: barColour }}
-                      />
-                    </div>
-                    <span className="font-mono text-gray-500 dark:text-gray-400 w-7 text-right">
-                      {pct}%
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
     </div>
   );
 }

@@ -237,7 +237,6 @@ export default function App() {
               scenario={{ ...scenario, grid_state: activeGridState }}
               selectedNodeId={selectedNode?.id}
               onNodeClick={handleNodeClick}
-              cascadeResult={compareMode ? null : cascadeResult}
               normalFrame={normalFrame}
               onNormalFrameChange={setNormalFrame}
               totalNormalFrames={totalNormalFrames}

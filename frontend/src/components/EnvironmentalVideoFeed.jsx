@@ -135,7 +135,7 @@ export default function EnvironmentalVideoFeed({ currentFrame, totalFrames }) {
         <video 
           ref={videoRef}
           src="/wildfire.mp4" 
-          className="w-full h-full object-cover opacity-90 pointer-events-none"
+          className="w-full h-full object-contain opacity-90 pointer-events-none"
           muted 
           playsInline
           preload="auto"

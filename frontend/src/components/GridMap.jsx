@@ -20,12 +20,6 @@ function edgeOpacity(ratio) {
   return Math.max(0.15, Math.min(0.9, 0.2 + ratio * 0.7));
 }
 
-function cascadeNodeColour(order, totalFailures) {
-  if (order === 1) return '#ff2222';
-  const t = totalFailures <= 1 ? 1 : (order - 1) / (totalFailures - 1);
-  return `rgb(255,${Math.round(t * 200)},0)`;
-}
-
 // ─── Coordinate helpers ───────────────────────────────────────────────────────
 
 const PAD = 40;
@@ -57,7 +51,6 @@ export default function GridMap({
   scenario,
   selectedNodeId,
   onNodeClick,
-  cascadeResult,
   normalFrame = 0,
   onNormalFrameChange,
   totalNormalFrames = 0,
@@ -119,45 +112,10 @@ export default function GridMap({
     return { totalGen, totalLoad, failedCount };
   }, [nodes]);
 
-  const cascadeMap = useMemo(() => {
-    if (!cascadeResult?.cascade_path) return {};
-    const m = {};
-    cascadeResult.cascade_path.forEach((s) => { m[s.node_id] = s; });
-    return m;
-  }, [cascadeResult]);
-
-  const totalCascadeFailures = cascadeResult?.cascade_path?.length ?? 0;
-
-  const cascadeArrows = useMemo(() => {
-    if (!cascadeResult?.cascade_path || cascadeResult.cascade_path.length < 2) return [];
-    const path = [...cascadeResult.cascade_path].sort((a, b) => a.order - b.order);
-    const arrows = [];
-    for (let i = 0; i < path.length - 1; i++) {
-      const src = posById[path[i].node_id];
-      const tgt = posById[path[i + 1].node_id];
-      if (src && tgt) arrows.push({ x1: src.px, y1: src.py, x2: tgt.px, y2: tgt.py });
-    }
-    return arrows;
-  }, [cascadeResult, posById]);
-
   const predictedNodeIds = useMemo(() => {
     if (!compareData) return new Set();
     return new Set(compareData.predicted_cascade_path.map((s) => s.node_id));
   }, [compareData]);
-
-  // Sequential rollout arrows: parent_id -> node_id for each step in cascade_sequence
-  const seqArrows = useMemo(() => {
-    if (!compareMode || !compareData?.cascade_sequence?.length) return [];
-    return compareData.cascade_sequence
-      .filter((s) => s.parent_id != null)
-      .map((s) => {
-        const src = posById[s.parent_id];
-        const tgt = posById[s.node_id];
-        if (!src || !tgt) return null;
-        return { x1: src.px, y1: src.py, x2: tgt.px, y2: tgt.py, score: s.ranking_score };
-      })
-      .filter(Boolean);
-  }, [compareMode, compareData, posById]);
 
   const revealedGtNodeIds = useMemo(() => {
     if (!compareData || !compareMode) return new Set();
@@ -171,10 +129,9 @@ export default function GridMap({
   const failedNodeIds = useMemo(() => {
     const ids = new Set();
     nodes.forEach((n) => { if (n.is_failed) ids.add(n.id); });
-    Object.keys(cascadeMap).forEach((id) => ids.add(Number(id)));
     revealedGtNodeIds.forEach((id) => ids.add(id));
     return ids;
-  }, [nodes, cascadeMap, revealedGtNodeIds]);
+  }, [nodes, revealedGtNodeIds]);
 
   const totalFrames = compareData?.total_timesteps ?? 0;
 
@@ -295,7 +252,6 @@ export default function GridMap({
       x: e.clientX - (rect?.left ?? 0) + 12,
       y: e.clientY - (rect?.top ?? 0) - 8,
       node,
-      cascadeStep: cascadeMap[node.id] ?? null,
     });
   }
 
@@ -380,7 +336,7 @@ export default function GridMap({
       >
         {/* Video feed placed OUTSIDE the SVG, but INSIDE the relative container */}
         {(() => {
-          const isCascadeScenario = scenario?.is_cascade || compareMode || totalCascadeFailures > 0 || scenario?.id === 2;
+          const isCascadeScenario = scenario?.is_cascade || compareMode;
           
           if (activeTotalFrames <= 1 || !isCascadeScenario) return null;
 
@@ -400,15 +356,6 @@ export default function GridMap({
           preserveAspectRatio="xMidYMid meet"
           style={{ display: 'block' }}
         >
-          <defs>
-            <marker id="cascade-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-              <path d="M0,0 L0,6 L6,3 z" fill="#ff6600" opacity="0.85" />
-            </marker>
-            <marker id="seq-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-              <path d="M0,0 L0,6 L6,3 z" fill="#a855f7" opacity="0.9" />
-            </marker>
-          </defs>
-
           <g transform={`translate(${transform.x},${transform.y}) scale(${transform.k})`}>
 
             {/* Edges */}
@@ -442,24 +389,6 @@ export default function GridMap({
               );
             })}
 
-            {/* Cascade arrows (physics simulation) */}
-            {cascadeArrows.map((a, i) => (
-              <line key={`ca-${i}`}
-                x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
-                stroke="#ff6600" strokeWidth={1.5} strokeOpacity={0.75}
-                strokeDasharray="4 3" markerEnd="url(#cascade-arrow)"
-              />
-            ))}
-
-            {/* Sequential rollout arrows (GNN causal chain, compare mode only) */}
-            {seqArrows.map((a, i) => (
-              <line key={`seq-${i}`}
-                x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
-                stroke="#a855f7" strokeWidth={1.5} strokeOpacity={0.8}
-                strokeDasharray="6 3" markerEnd="url(#seq-arrow)"
-              />
-            ))}
-
             {/* Nodes */}
             {nodePos.map((node) => {
               const isSelected = node.id === selectedNodeId;
@@ -469,29 +398,9 @@ export default function GridMap({
               const isRevealed     = compareMode && revealedGtNodeIds.has(node.id);
               const showPurpleRing = isPredicted && !isRevealed;
 
-              const cascadeStep = cascadeMap[node.id];
-              const inCascade   = !compareMode && !!cascadeStep;
-
-              const colour = overrideColour ?? (inCascade
-                ? cascadeNodeColour(cascadeStep.order, totalCascadeFailures)
-                : nodeColour(node));
+              const colour = overrideColour ?? nodeColour(node);
 
               const off = nodeOffsets[node.id] ?? { dx: 0, dy: 0 };
-
-              // --- Fire Animation Logic ---
-              // Find the trigger node to apply the fire effect to.
-              const triggerNodeId = compareMode
-                ? (compareData?.ground_truth_cascade_path?.[0]?.node_id || compareData?.predicted_cascade_path?.[0]?.node_id || 15)
-                : (cascadeResult?.cascade_path?.find(s => s.is_trigger)?.node_id || 15);
-              
-              const fireStartFrame = compareMode 
-                ? (compareData?.cascade_start_time ?? 10) 
-                : (scenario?.metadata?.cascade_start_time ?? 10);
-                
-              const isCascadeScenario = scenario?.is_cascade || compareMode || scenario?.id === 2;
-              
-              // Only catch fire if it's the trigger node, the scenario is a cascade, and we've reached the start frame
-              const isNodeOnFire = node.id === triggerNodeId && activeCurrentFrame >= fireStartFrame && isCascadeScenario;
 
               return (
                 <g key={node.id}
@@ -502,40 +411,18 @@ export default function GridMap({
                   onMouseEnter={(e) => showTooltip(e, node)}
                   onMouseLeave={() => setTooltip(null)}
                 >
-                  {/* The Fire Animation Overlay */}
-                  {isNodeOnFire && (
-                    <g className="pointer-events-none">
-                      <circle r={14} fill="none" stroke="#f97316" strokeWidth={3} className="animate-ping opacity-75" />
-                      <circle r={12} fill="none" stroke="#ef4444" strokeWidth={2} />
-                      <text dy="-8" dx="6" fontSize="14" style={{ textShadow: '0px 2px 4px rgba(0,0,0,0.8)' }}>
-                        🔥
-                      </text>
-                    </g>
-                  )}
-
                   {showPurpleRing && (
                     <circle r={11} fill="none" stroke="#a855f7" strokeWidth={2} strokeOpacity={0.8} />
-                  )}
-                  {inCascade && (
-                    <circle r={cascadeStep.is_trigger ? 13 : 10} fill="none"
-                      stroke={colour} strokeWidth={cascadeStep.is_trigger ? 2.5 : 1.5} strokeOpacity={0.6} />
                   )}
                   {isSelected && (
                     <circle r={9} fill="none" stroke="#facc15" strokeWidth={2} />
                   )}
 
-                  <circle r={inCascade || isPredicted || isRevealed ? 6 : 5}
+                  <circle r={isPredicted || isRevealed ? 6 : 5}
                     fill={colour}
                     stroke="#111827" strokeWidth={0.8}
                     fillOpacity={node.is_failed ? 0.7 : 1}
                   />
-
-                  {inCascade && (
-                    <text dy="-8" textAnchor="middle" fontSize={4} fontWeight="bold"
-                      fill={colour} style={{ pointerEvents: 'none', userSelect: 'none' }}>
-                      #{cascadeStep.order}
-                    </text>
-                  )}
 
                   <text dy="0.35em" textAnchor="middle" fontSize={3.5} fill="#f9fafb"
                     style={{ pointerEvents: 'none', userSelect: 'none' }}>
@@ -544,6 +431,23 @@ export default function GridMap({
                 </g>
               );
             })}
+
+            {/* Fire location marker — rendered at actual coordinate from scenario metadata */}
+            {(() => {
+              const fireCoord = scenario?.metadata?.fire_location;
+              const fireStartFrame = compareMode
+                ? (compareData?.cascade_start_time ?? 10)
+                : (scenario?.metadata?.cascade_start_time ?? 10);
+              const isCascadeScenario = scenario?.is_cascade || compareMode;
+              if (!fireCoord || !isCascadeScenario || activeCurrentFrame < fireStartFrame) return null;
+              return (
+                <g transform={`translate(${sx(fireCoord[0])},${sy(fireCoord[1])})`} className="pointer-events-none">
+                  <circle r={14} fill="none" stroke="#f97316" strokeWidth={3} className="animate-ping opacity-75" />
+                  <circle r={12} fill="none" stroke="#ef4444" strokeWidth={2} />
+                  <text dy="-8" dx="6" fontSize="14" style={{ textShadow: '0px 2px 4px rgba(0,0,0,0.8)' }}>🔥</text>
+                </g>
+              );
+            })()}
           </g>
         </svg>
 
@@ -561,15 +465,6 @@ export default function GridMap({
                  tooltip.node.power_injection_mw > 0 ? 'Generator' : 'Load'}
               </span>
             </div>
-            {tooltip.cascadeStep && (
-              <div className="mb-2 pb-1 border-b border-gray-200 dark:border-gray-700">
-                <p className="text-orange-600 dark:text-orange-400 font-semibold mb-0.5">
-                  {tooltip.cascadeStep.is_trigger ? '💥 Trigger' : `⚡ Failure #${tooltip.cascadeStep.order}`}
-                </p>
-                <TRow label="Time" value={`${tooltip.cascadeStep.failure_time_minutes.toFixed(2)} min`} />
-                <TRow label="Reason" value={tooltip.cascadeStep.reason} />
-              </div>
-            )}
             {compareMode && compareData && (
               <div className="mb-2 pb-1 border-b border-gray-200 dark:border-gray-700 space-y-0.5">
                 {predictedNodeIds.has(tooltip.node.id) && (
@@ -620,22 +515,12 @@ export default function GridMap({
               <LegendDot colour="#9ca3af" label="False alarm" />
             </>
           )}
-          {!compareMode && totalCascadeFailures > 0 && (
-            <>
-              <p className="text-gray-700 dark:text-gray-400 font-semibold mt-2 mb-1">Cascade</p>
-              <LegendDot colour="#ff2222" label="Trigger node" />
-              <LegendDot colour="#ff8800" label="Cascade failure" />
-            </>
-          )}
           <p className="text-gray-700 dark:text-gray-400 font-semibold mt-2 mb-1">Line loading</p>
           <LegendLine colour="#22c55e" label="< 50 %" />
           <LegendLine colour="#eab308" label="50 – 75 %" />
           <LegendLine colour="#f97316" label="75 – 100 %" />
           <LegendLine colour="#ef4444" label="> 100 %" />
           <LegendLineDashed colour="#4b5563" label="Disconnected" />
-          {compareMode && seqArrows.length > 0 && (
-            <LegendLineDashed colour="#a855f7" label="AI causal chain" />
-          )}
           {!compareMode && <p className="text-gray-500 dark:text-gray-600 mt-2">Click node to simulate cascade</p>}
           <p className="text-gray-500 dark:text-gray-600">Scroll to zoom · drag to pan</p>
         </div>
