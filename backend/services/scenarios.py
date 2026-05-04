@@ -112,6 +112,7 @@ class ScenarioService:
                 "num_edges": int(meta.get("num_edges", self.topo.num_edges)),
                 "base_mva": float(meta.get("base_mva", 1000.0)),
                 "fire_location": fire_location_xy,
+                "video_path": meta.get("video_path", None),
             },
             "ground_truth_cascade_path": ground_truth_path,
             # t=0 state kept for backwards compatibility

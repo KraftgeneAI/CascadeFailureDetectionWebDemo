@@ -334,19 +334,14 @@ export default function GridMap({
         onMouseUp={onMouseUp}
         onMouseLeave={onMouseUp}
       >
-        {/* Video feed placed OUTSIDE the SVG, but INSIDE the relative container */}
-        {(() => {
-          const isCascadeScenario = scenario?.is_cascade || compareMode;
-          
-          if (activeTotalFrames <= 1 || !isCascadeScenario) return null;
-
-          return (
-            <EnvironmentalVideoFeed 
-              currentFrame={activeCurrentFrame} 
-              totalFrames={activeTotalFrames} 
-            />
-          );
-        })()}
+        {/* Video feed — only for scenarios generated with a video */}
+        {scenario?.metadata?.video_path && activeTotalFrames > 1 && (
+          <EnvironmentalVideoFeed
+            videoPath={scenario.metadata.video_path}
+            currentFrame={activeCurrentFrame}
+            totalFrames={activeTotalFrames}
+          />
+        )}
 
         <svg
           ref={svgRef}
@@ -436,10 +431,9 @@ export default function GridMap({
             {(() => {
               const fireCoord = scenario?.metadata?.fire_location;
               const fireStartFrame = compareMode
-                ? (compareData?.cascade_start_time ?? 10)
-                : (scenario?.metadata?.cascade_start_time ?? 10);
-              const isCascadeScenario = scenario?.is_cascade || compareMode;
-              if (!fireCoord || !isCascadeScenario || activeCurrentFrame < fireStartFrame) return null;
+                ? (compareData?.cascade_start_time ?? 0)
+                : (scenario?.metadata?.cascade_start_time ?? 0);
+              if (!scenario?.metadata?.video_path || !fireCoord || activeCurrentFrame < fireStartFrame) return null;
               return (
                 <g transform={`translate(${sx(fireCoord[0])},${sy(fireCoord[1])})`} className="pointer-events-none">
                   <circle r={14} fill="none" stroke="#f97316" strokeWidth={3} className="animate-ping opacity-75" />

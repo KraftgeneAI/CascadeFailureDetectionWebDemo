@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react';
 
-export default function EnvironmentalVideoFeed({ currentFrame, totalFrames }) {
+export default function EnvironmentalVideoFeed({ videoPath, currentFrame, totalFrames }) {
   const videoRef = useRef(null);
 
   // ─── 1. Video Synchronization ────────────────────────────────────────────────
@@ -134,7 +134,7 @@ export default function EnvironmentalVideoFeed({ currentFrame, totalFrames }) {
       <div className="relative aspect-video bg-black rounded-b-lg overflow-hidden select-none">
         <video 
           ref={videoRef}
-          src="/wildfire.mp4" 
+          src="/wildfire.mp4"
           className="w-full h-full object-contain opacity-90 pointer-events-none"
           muted 
           playsInline
