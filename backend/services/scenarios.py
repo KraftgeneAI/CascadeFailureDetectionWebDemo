@@ -75,6 +75,10 @@ class ScenarioService:
         sequence = scenario["sequence"]
         thermal_limits: np.ndarray = sequence[0]["thermal_limits"]
 
+        # Pass fire_location coordinate directly — [x, y] in grid space.
+        raw_fire = sequence[0].get("fire_location")
+        fire_location_xy = [float(raw_fire[0]), float(raw_fire[1])] if raw_fire is not None else None
+
         # ---- all timesteps (normal-mode timeline) -------------------------
         all_timesteps = [
             self._build_grid_state(ts, thermal_limits)
@@ -107,6 +111,8 @@ class ScenarioService:
                 "num_nodes": int(meta.get("num_nodes", self.topo.num_nodes)),
                 "num_edges": int(meta.get("num_edges", self.topo.num_edges)),
                 "base_mva": float(meta.get("base_mva", 1000.0)),
+                "fire_location": fire_location_xy,
+                "video_path": meta.get("video_path", None),
             },
             "ground_truth_cascade_path": ground_truth_path,
             # t=0 state kept for backwards compatibility

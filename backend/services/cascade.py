@@ -171,7 +171,7 @@ class CascadeService:
                 "reason": str(reason),
                 "is_trigger": int(nid) == node_id,
             }
-            for i, (nid, ftime, reason) in enumerate(failure_sequence)
+            for i, (nid, ftime, reason, *_) in enumerate(failure_sequence)
         ]
 
         return {
