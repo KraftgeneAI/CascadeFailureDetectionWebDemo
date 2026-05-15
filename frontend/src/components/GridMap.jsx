@@ -255,6 +255,15 @@ export default function GridMap({
     });
   }
 
+  function showEdgeTooltip(e, edge) {
+    const rect = containerRef.current?.getBoundingClientRect();
+    setTooltip({
+      x: e.clientX - (rect?.left ?? 0) + 12,
+      y: e.clientY - (rect?.top ?? 0) - 8,
+      edge,
+    });
+  }
+
   function compareNodeColour(nodeId) {
     const isRevealed = revealedGtNodeIds.has(nodeId);
     const isPredicted = predictedNodeIds.has(nodeId);
@@ -360,27 +369,26 @@ export default function GridMap({
               if (!src || !tgt) return null;
 
               const isDead = failedNodeIds.has(edge.source) || failedNodeIds.has(edge.target);
-
-              if (isDead) {
-                return (
-                  <line key={edge.id}
-                    x1={src.px} y1={src.py} x2={tgt.px} y2={tgt.py}
-                    stroke="#4b5563"
-                    strokeWidth={0.7}
-                    strokeOpacity={0.5}
-                    strokeDasharray="3 3"
-                  />
-                );
-              }
-
-              const ratio = edge.thermal_limit_mw > 0
+              const ratio = (!isDead && edge.thermal_limit_mw > 0)
                 ? Math.abs(edge.active_flow_mw) / edge.thermal_limit_mw : 0;
+
               return (
-                <line key={edge.id}
-                  x1={src.px} y1={src.py} x2={tgt.px} y2={tgt.py}
-                  stroke={edgeColour(ratio)} strokeWidth={0.8 + ratio * 1.2}
-                  strokeOpacity={edgeOpacity(ratio)}
-                />
+                <g key={edge.id}
+                  onMouseEnter={(e) => showEdgeTooltip(e, edge)}
+                  onMouseLeave={() => setTooltip(null)}
+                  style={{ cursor: 'crosshair' }}
+                >
+                  {/* Visible line */}
+                  {isDead
+                    ? <line x1={src.px} y1={src.py} x2={tgt.px} y2={tgt.py}
+                        stroke="#4b5563" strokeWidth={0.7} strokeOpacity={0.5} strokeDasharray="3 3" />
+                    : <line x1={src.px} y1={src.py} x2={tgt.px} y2={tgt.py}
+                        stroke={edgeColour(ratio)} strokeWidth={0.8 + ratio * 1.2} strokeOpacity={edgeOpacity(ratio)} />
+                  }
+                  {/* Invisible wider hit area */}
+                  <line x1={src.px} y1={src.py} x2={tgt.px} y2={tgt.py}
+                    stroke="transparent" strokeWidth={8} />
+                </g>
               );
             })}
 
@@ -446,7 +454,7 @@ export default function GridMap({
         </svg>
 
         {/* Tooltip */}
-        {tooltip && (
+        {tooltip && tooltip.node && (
           <div className="absolute z-10 pointer-events-none bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-xs shadow-xl min-w-[170px] transition-colors"
             style={{ left: tooltip.x, top: tooltip.y }}>
             <div className="flex items-center justify-between mb-2 pb-1 border-b border-gray-200 dark:border-gray-700">
@@ -494,6 +502,37 @@ export default function GridMap({
             )}
           </div>
         )}
+
+        {/* Edge Tooltip */}
+        {tooltip && tooltip.edge && (() => {
+          const e = tooltip.edge;
+          const isDead = failedNodeIds.has(e.source) || failedNodeIds.has(e.target);
+          const loading = e.thermal_limit_mw > 0
+            ? (Math.abs(e.active_flow_mw) / e.thermal_limit_mw) * 100 : 0;
+          return (
+            <div className="absolute z-10 pointer-events-none bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-xs shadow-xl min-w-[170px] transition-colors"
+              style={{ left: tooltip.x, top: tooltip.y }}>
+              <div className="flex items-center justify-between mb-2 pb-1 border-b border-gray-200 dark:border-gray-700">
+                <span className="font-bold text-gray-900 dark:text-white">
+                  {e.source} → {e.target}
+                </span>
+                <span className={isDead ? 'text-gray-500 dark:text-gray-400' : 'text-gray-600 dark:text-gray-300'}>
+                  {isDead ? 'Disconnected' : 'Line'}
+                </span>
+              </div>
+              <div className="space-y-0.5">
+                <TRow label="Flow" value={`${e.active_flow_mw.toFixed(1)} MW`}
+                  colour={isDead ? 'text-gray-500' : 'text-green-600 dark:text-green-400'} />
+                <TRow label="Reactive" value={`${e.reactive_flow_mvar.toFixed(1)} MVAr`} colour="text-blue-600 dark:text-blue-400" />
+                <TRow label="Limit" value={`${e.thermal_limit_mw.toFixed(1)} MW`} />
+                {!isDead && (
+                  <TRow label="Loading" value={`${loading.toFixed(1)}%`}
+                    colour={loading >= 100 ? 'text-red-600 dark:text-red-400' : loading >= 75 ? 'text-orange-600 dark:text-orange-400' : loading >= 50 ? 'text-yellow-600 dark:text-yellow-400' : 'text-green-600 dark:text-green-400'} />
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Legend */}
         <div className="absolute bottom-4 right-4 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded p-3 text-xs space-y-1 border border-gray-200 dark:border-gray-700 transition-colors">
