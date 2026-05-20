@@ -346,7 +346,7 @@ export default function GridMap({
         {/* Video feed — only for scenarios generated with a video */}
         {scenario?.metadata?.video_path && activeTotalFrames > 1 && (
           <EnvironmentalVideoFeed
-            videoPath={scenario.metadata.video_path}
+            videoPath={`/api/video/${scenario.id}`}
             currentFrame={activeCurrentFrame}
             totalFrames={activeTotalFrames}
           />

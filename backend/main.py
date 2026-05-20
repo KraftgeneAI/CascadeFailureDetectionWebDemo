@@ -27,6 +27,7 @@ import numpy as np
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from services.topology import TopologyService
@@ -215,6 +216,37 @@ def simulate_cascade(req: CascadeRequest):
         raise HTTPException(status_code=404, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.get("/api/video/{scenario_id}", summary="Stream scenario video")
+def get_video(scenario_id: int):
+    """
+    Stream the wildfire video associated with a scenario.
+    Returns 404 if the scenario has no video or the file does not exist.
+    """
+    try:
+        scenario = scenario_service.get_scenario(scenario_id)
+    except IndexError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    video_path = scenario.get("metadata", {}).get("video_path")
+    if not video_path:
+        raise HTTPException(status_code=404, detail="No video for this scenario")
+
+    path = Path(video_path)
+    if not path.is_absolute():
+        path = CASCADE_LIB / path
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail=f"Video file not found: {video_path}")
+
+    media_type = "video/mp4"
+    suffix = path.suffix.lower()
+    if suffix == ".avi":
+        media_type = "video/x-msvideo"
+    elif suffix == ".mov":
+        media_type = "video/quicktime"
+
+    return FileResponse(path, media_type=media_type)
 
 
 @app.post("/api/compare", summary="Model prediction vs ground truth comparison")

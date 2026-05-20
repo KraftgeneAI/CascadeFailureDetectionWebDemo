@@ -132,9 +132,9 @@ export default function EnvironmentalVideoFeed({ videoPath, currentFrame, totalF
 
       {/* ── Video Player ── */}
       <div className="relative aspect-video bg-black rounded-b-lg overflow-hidden select-none">
-        <video 
+        <video
           ref={videoRef}
-          src="/wildfire.mp4"
+          src={videoPath}
           className="w-full h-full object-contain opacity-90 pointer-events-none"
           muted 
           playsInline
