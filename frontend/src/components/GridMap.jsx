@@ -1,4 +1,5 @@
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
+import EnvironmentalVideoFeed from './EnvironmentalVideoFeed';
 
 // ─── Colour helpers ───────────────────────────────────────────────────────────
 
@@ -17,12 +18,6 @@ function edgeColour(ratio) {
 
 function edgeOpacity(ratio) {
   return Math.max(0.15, Math.min(0.9, 0.2 + ratio * 0.7));
-}
-
-function cascadeNodeColour(order, totalFailures) {
-  if (order === 1) return '#ff2222';
-  const t = totalFailures <= 1 ? 1 : (order - 1) / (totalFailures - 1);
-  return `rgb(255,${Math.round(t * 200)},0)`;
 }
 
 // ─── Coordinate helpers ───────────────────────────────────────────────────────
@@ -56,7 +51,6 @@ export default function GridMap({
   scenario,
   selectedNodeId,
   onNodeClick,
-  cascadeResult,
   normalFrame = 0,
   onNormalFrameChange,
   totalNormalFrames = 0,
@@ -118,27 +112,6 @@ export default function GridMap({
     return { totalGen, totalLoad, failedCount };
   }, [nodes]);
 
-  const cascadeMap = useMemo(() => {
-    if (!cascadeResult?.cascade_path) return {};
-    const m = {};
-    cascadeResult.cascade_path.forEach((s) => { m[s.node_id] = s; });
-    return m;
-  }, [cascadeResult]);
-
-  const totalCascadeFailures = cascadeResult?.cascade_path?.length ?? 0;
-
-  const cascadeArrows = useMemo(() => {
-    if (!cascadeResult?.cascade_path || cascadeResult.cascade_path.length < 2) return [];
-    const path = [...cascadeResult.cascade_path].sort((a, b) => a.order - b.order);
-    const arrows = [];
-    for (let i = 0; i < path.length - 1; i++) {
-      const src = posById[path[i].node_id];
-      const tgt = posById[path[i + 1].node_id];
-      if (src && tgt) arrows.push({ x1: src.px, y1: src.py, x2: tgt.px, y2: tgt.py });
-    }
-    return arrows;
-  }, [cascadeResult, posById]);
-
   const predictedNodeIds = useMemo(() => {
     if (!compareData) return new Set();
     return new Set(compareData.predicted_cascade_path.map((s) => s.node_id));
@@ -156,10 +129,9 @@ export default function GridMap({
   const failedNodeIds = useMemo(() => {
     const ids = new Set();
     nodes.forEach((n) => { if (n.is_failed) ids.add(n.id); });
-    Object.keys(cascadeMap).forEach((id) => ids.add(Number(id)));
     revealedGtNodeIds.forEach((id) => ids.add(id));
     return ids;
-  }, [nodes, cascadeMap, revealedGtNodeIds]);
+  }, [nodes, revealedGtNodeIds]);
 
   const totalFrames = compareData?.total_timesteps ?? 0;
 
@@ -280,7 +252,15 @@ export default function GridMap({
       x: e.clientX - (rect?.left ?? 0) + 12,
       y: e.clientY - (rect?.top ?? 0) - 8,
       node,
-      cascadeStep: cascadeMap[node.id] ?? null,
+    });
+  }
+
+  function showEdgeTooltip(e, edge) {
+    const rect = containerRef.current?.getBoundingClientRect();
+    setTooltip({
+      x: e.clientX - (rect?.left ?? 0) + 12,
+      y: e.clientY - (rect?.top ?? 0) - 8,
+      edge,
     });
   }
 
@@ -299,6 +279,10 @@ export default function GridMap({
     }
     return null; 
   }
+
+  // Define active frames for video and fire synchronization
+  const activeCurrentFrame = compareMode ? currentFrame : normalFrame;
+  const activeTotalFrames = compareMode ? totalFrames : totalNormalFrames;
 
   return (
     <div className="w-full h-full flex flex-col">
@@ -350,7 +334,7 @@ export default function GridMap({
         })()}
       </div>
 
-      {/* ── SVG canvas ──────────────────────────────────────────────── */}
+      {/* ── SVG canvas and Video Container ───────────────────────────── */}
       <div
         ref={containerRef}
         className="flex-1 relative cursor-grab active:cursor-grabbing select-none overflow-hidden bg-white dark:bg-gray-950 transition-colors duration-300"
@@ -359,6 +343,15 @@ export default function GridMap({
         onMouseUp={onMouseUp}
         onMouseLeave={onMouseUp}
       >
+        {/* Video feed — only for scenarios generated with a video */}
+        {scenario?.metadata?.video_path && activeTotalFrames > 1 && (
+          <EnvironmentalVideoFeed
+            videoPath={scenario.metadata.video_path}
+            currentFrame={activeCurrentFrame}
+            totalFrames={activeTotalFrames}
+          />
+        )}
+
         <svg
           ref={svgRef}
           width="100%"
@@ -367,12 +360,6 @@ export default function GridMap({
           preserveAspectRatio="xMidYMid meet"
           style={{ display: 'block' }}
         >
-          <defs>
-            <marker id="cascade-arrow" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-              <path d="M0,0 L0,6 L6,3 z" fill="#ff6600" opacity="0.85" />
-            </marker>
-          </defs>
-
           <g transform={`translate(${transform.x},${transform.y}) scale(${transform.k})`}>
 
             {/* Edges */}
@@ -382,38 +369,28 @@ export default function GridMap({
               if (!src || !tgt) return null;
 
               const isDead = failedNodeIds.has(edge.source) || failedNodeIds.has(edge.target);
-
-              if (isDead) {
-                return (
-                  <line key={edge.id}
-                    x1={src.px} y1={src.py} x2={tgt.px} y2={tgt.py}
-                    stroke="#4b5563"
-                    strokeWidth={0.7}
-                    strokeOpacity={0.5}
-                    strokeDasharray="3 3"
-                  />
-                );
-              }
-
-              const ratio = edge.thermal_limit_mw > 0
+              const ratio = (!isDead && edge.thermal_limit_mw > 0)
                 ? Math.abs(edge.active_flow_mw) / edge.thermal_limit_mw : 0;
+
               return (
-                <line key={edge.id}
-                  x1={src.px} y1={src.py} x2={tgt.px} y2={tgt.py}
-                  stroke={edgeColour(ratio)} strokeWidth={0.8 + ratio * 1.2}
-                  strokeOpacity={edgeOpacity(ratio)}
-                />
+                <g key={edge.id}
+                  onMouseEnter={(e) => showEdgeTooltip(e, edge)}
+                  onMouseLeave={() => setTooltip(null)}
+                  style={{ cursor: 'crosshair' }}
+                >
+                  {/* Visible line */}
+                  {isDead
+                    ? <line x1={src.px} y1={src.py} x2={tgt.px} y2={tgt.py}
+                        stroke="#4b5563" strokeWidth={0.7} strokeOpacity={0.5} strokeDasharray="3 3" />
+                    : <line x1={src.px} y1={src.py} x2={tgt.px} y2={tgt.py}
+                        stroke={edgeColour(ratio)} strokeWidth={0.8 + ratio * 1.2} strokeOpacity={edgeOpacity(ratio)} />
+                  }
+                  {/* Invisible wider hit area */}
+                  <line x1={src.px} y1={src.py} x2={tgt.px} y2={tgt.py}
+                    stroke="transparent" strokeWidth={8} />
+                </g>
               );
             })}
-
-            {/* Cascade arrows */}
-            {cascadeArrows.map((a, i) => (
-              <line key={`ca-${i}`}
-                x1={a.x1} y1={a.y1} x2={a.x2} y2={a.y2}
-                stroke="#ff6600" strokeWidth={1.5} strokeOpacity={0.75}
-                strokeDasharray="4 3" markerEnd="url(#cascade-arrow)"
-              />
-            ))}
 
             {/* Nodes */}
             {nodePos.map((node) => {
@@ -424,12 +401,7 @@ export default function GridMap({
               const isRevealed     = compareMode && revealedGtNodeIds.has(node.id);
               const showPurpleRing = isPredicted && !isRevealed;
 
-              const cascadeStep = cascadeMap[node.id];
-              const inCascade   = !compareMode && !!cascadeStep;
-
-              const colour = overrideColour ?? (inCascade
-                ? cascadeNodeColour(cascadeStep.order, totalCascadeFailures)
-                : nodeColour(node));
+              const colour = overrideColour ?? nodeColour(node);
 
               const off = nodeOffsets[node.id] ?? { dx: 0, dy: 0 };
 
@@ -445,26 +417,15 @@ export default function GridMap({
                   {showPurpleRing && (
                     <circle r={11} fill="none" stroke="#a855f7" strokeWidth={2} strokeOpacity={0.8} />
                   )}
-                  {inCascade && (
-                    <circle r={cascadeStep.is_trigger ? 13 : 10} fill="none"
-                      stroke={colour} strokeWidth={cascadeStep.is_trigger ? 2.5 : 1.5} strokeOpacity={0.6} />
-                  )}
                   {isSelected && (
                     <circle r={9} fill="none" stroke="#facc15" strokeWidth={2} />
                   )}
 
-                  <circle r={inCascade || isPredicted || isRevealed ? 6 : 5}
+                  <circle r={isPredicted || isRevealed ? 6 : 5}
                     fill={colour}
                     stroke="#111827" strokeWidth={0.8}
                     fillOpacity={node.is_failed ? 0.7 : 1}
                   />
-
-                  {inCascade && (
-                    <text dy="-8" textAnchor="middle" fontSize={4} fontWeight="bold"
-                      fill={colour} style={{ pointerEvents: 'none', userSelect: 'none' }}>
-                      #{cascadeStep.order}
-                    </text>
-                  )}
 
                   <text dy="0.35em" textAnchor="middle" fontSize={3.5} fill="#f9fafb"
                     style={{ pointerEvents: 'none', userSelect: 'none' }}>
@@ -473,11 +434,27 @@ export default function GridMap({
                 </g>
               );
             })}
+
+            {/* Fire location marker — rendered at actual coordinate from scenario metadata */}
+            {(() => {
+              const fireCoord = scenario?.metadata?.fire_location;
+              const fireStartFrame = compareMode
+                ? (compareData?.cascade_start_time ?? 0)
+                : (scenario?.metadata?.cascade_start_time ?? 0);
+              if (!scenario?.metadata?.video_path || !fireCoord || activeCurrentFrame < fireStartFrame) return null;
+              return (
+                <g transform={`translate(${sx(fireCoord[0])},${sy(fireCoord[1])})`} className="pointer-events-none">
+                  <circle r={14} fill="none" stroke="#f97316" strokeWidth={3} className="animate-ping opacity-75" />
+                  <circle r={12} fill="none" stroke="#ef4444" strokeWidth={2} />
+                  <text dy="-8" dx="6" fontSize="14" style={{ textShadow: '0px 2px 4px rgba(0,0,0,0.8)' }}>🔥</text>
+                </g>
+              );
+            })()}
           </g>
         </svg>
 
         {/* Tooltip */}
-        {tooltip && (
+        {tooltip && tooltip.node && (
           <div className="absolute z-10 pointer-events-none bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-xs shadow-xl min-w-[170px] transition-colors"
             style={{ left: tooltip.x, top: tooltip.y }}>
             <div className="flex items-center justify-between mb-2 pb-1 border-b border-gray-200 dark:border-gray-700">
@@ -490,15 +467,6 @@ export default function GridMap({
                  tooltip.node.power_injection_mw > 0 ? 'Generator' : 'Load'}
               </span>
             </div>
-            {tooltip.cascadeStep && (
-              <div className="mb-2 pb-1 border-b border-gray-200 dark:border-gray-700">
-                <p className="text-orange-600 dark:text-orange-400 font-semibold mb-0.5">
-                  {tooltip.cascadeStep.is_trigger ? '💥 Trigger' : `⚡ Failure #${tooltip.cascadeStep.order}`}
-                </p>
-                <TRow label="Time" value={`${tooltip.cascadeStep.failure_time_minutes.toFixed(2)} min`} />
-                <TRow label="Reason" value={tooltip.cascadeStep.reason} />
-              </div>
-            )}
             {compareMode && compareData && (
               <div className="mb-2 pb-1 border-b border-gray-200 dark:border-gray-700 space-y-0.5">
                 {predictedNodeIds.has(tooltip.node.id) && (
@@ -535,6 +503,37 @@ export default function GridMap({
           </div>
         )}
 
+        {/* Edge Tooltip */}
+        {tooltip && tooltip.edge && (() => {
+          const e = tooltip.edge;
+          const isDead = failedNodeIds.has(e.source) || failedNodeIds.has(e.target);
+          const loading = e.thermal_limit_mw > 0
+            ? (Math.abs(e.active_flow_mw) / e.thermal_limit_mw) * 100 : 0;
+          return (
+            <div className="absolute z-10 pointer-events-none bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-xs shadow-xl min-w-[170px] transition-colors"
+              style={{ left: tooltip.x, top: tooltip.y }}>
+              <div className="flex items-center justify-between mb-2 pb-1 border-b border-gray-200 dark:border-gray-700">
+                <span className="font-bold text-gray-900 dark:text-white">
+                  {e.source} → {e.target}
+                </span>
+                <span className={isDead ? 'text-gray-500 dark:text-gray-400' : 'text-gray-600 dark:text-gray-300'}>
+                  {isDead ? 'Disconnected' : 'Line'}
+                </span>
+              </div>
+              <div className="space-y-0.5">
+                <TRow label="Flow" value={`${e.active_flow_mw.toFixed(1)} MW`}
+                  colour={isDead ? 'text-gray-500' : 'text-green-600 dark:text-green-400'} />
+                <TRow label="Reactive" value={`${e.reactive_flow_mvar.toFixed(1)} MVAr`} colour="text-blue-600 dark:text-blue-400" />
+                <TRow label="Limit" value={`${e.thermal_limit_mw.toFixed(1)} MW`} />
+                {!isDead && (
+                  <TRow label="Loading" value={`${loading.toFixed(1)}%`}
+                    colour={loading >= 100 ? 'text-red-600 dark:text-red-400' : loading >= 75 ? 'text-orange-600 dark:text-orange-400' : loading >= 50 ? 'text-yellow-600 dark:text-yellow-400' : 'text-green-600 dark:text-green-400'} />
+                )}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Legend */}
         <div className="absolute bottom-4 right-4 bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm rounded p-3 text-xs space-y-1 border border-gray-200 dark:border-gray-700 transition-colors">
           <p className="text-gray-700 dark:text-gray-400 font-semibold mb-1">Nodes</p>
@@ -547,13 +546,6 @@ export default function GridMap({
               <LegendDot colour="#06b6d4" label="Correctly predicted" />
               <LegendDot colour="#ef4444" label="Actual failure" />
               <LegendDot colour="#9ca3af" label="False alarm" />
-            </>
-          )}
-          {!compareMode && totalCascadeFailures > 0 && (
-            <>
-              <p className="text-gray-700 dark:text-gray-400 font-semibold mt-2 mb-1">Cascade</p>
-              <LegendDot colour="#ff2222" label="Trigger node" />
-              <LegendDot colour="#ff8800" label="Cascade failure" />
             </>
           )}
           <p className="text-gray-700 dark:text-gray-400 font-semibold mt-2 mb-1">Line loading</p>
