@@ -234,11 +234,13 @@ def get_video(scenario_id: int):
     if not video_path:
         raise HTTPException(status_code=404, detail="No video for this scenario")
 
-    path = Path(video_path)
-    if not path.is_absolute():
-        path = VIDEO_PATH / path
+    # Extract just the filename — ignore whatever prefix/backslashes are stored
+    # in the pkl (e.g. "data\videos\5.mp4" → "5.mp4")
+    filename = Path(video_path.replace("\\", "/")).name
+    path = CASCADE_LIB / "videos" / filename
+
     if not path.is_file():
-        raise HTTPException(status_code=404, detail=f"Video file not found: {video_path}")
+        raise HTTPException(status_code=404, detail=f"Video file not found: {path}")
 
     media_type = "video/mp4"
     suffix = path.suffix.lower()
