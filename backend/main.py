@@ -41,6 +41,7 @@ from services.compare import CompareService
 DATA_DIR      = CASCADE_LIB / "data" / "test"
 TOPOLOGY_PATH = CASCADE_LIB / "data" / "grid_topology.pkl"
 MODEL_PATH    = CASCADE_LIB / "checkpoints" / "best_model.pth"
+VIDEO_PATH    = CASCADE_LIB / "data"
 
 # ---------------------------------------------------------------------------
 # App
@@ -235,7 +236,7 @@ def get_video(scenario_id: int):
 
     path = Path(video_path)
     if not path.is_absolute():
-        path = CASCADE_LIB / path
+        path = VIDEO_PATH / path
     if not path.is_file():
         raise HTTPException(status_code=404, detail=f"Video file not found: {video_path}")
 
