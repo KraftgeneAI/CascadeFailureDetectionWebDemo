@@ -5,10 +5,10 @@
  * "proxy": "http://localhost:8000" in development).
  */
 
-const BASE = 'https://api.energyeminence.online/api';
+export const API_BASE = 'https://api.energyeminence.online/api';
 
 async function request(path, options = {}) {
-  const res = await fetch(`${BASE}${path}`, {
+  const res = await fetch(`${API_BASE}${path}`, {
     headers: { 'Content-Type': 'application/json' },
     ...options,
   });

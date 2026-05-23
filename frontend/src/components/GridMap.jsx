@@ -1,5 +1,6 @@
 import { useMemo, useState, useRef, useCallback, useEffect } from 'react';
 import EnvironmentalVideoFeed from './EnvironmentalVideoFeed';
+import { API_BASE } from '../api';
 
 // ─── Colour helpers ───────────────────────────────────────────────────────────
 
@@ -346,7 +347,7 @@ export default function GridMap({
         {/* Video feed — only for scenarios generated with a video */}
         {scenario?.metadata?.video_path && activeTotalFrames > 1 && (
           <EnvironmentalVideoFeed
-            videoPath={`/api/video/${scenario.id}`}
+            videoPath={`${API_BASE}/video/${scenario.id}`}
             currentFrame={activeCurrentFrame}
             totalFrames={activeTotalFrames}
           />
