@@ -436,13 +436,22 @@ export default function GridMap({
               );
             })}
 
-            {/* Fire location marker — rendered at actual coordinate from scenario metadata */}
+            {/* Fire location marker — only shown when a wildfire-caused failure is revealed */}
             {(() => {
               const fireCoord = scenario?.metadata?.fire_location;
               const fireStartFrame = compareMode
                 ? (compareData?.cascade_start_time ?? 0)
                 : (scenario?.metadata?.cascade_start_time ?? 0);
               if (!scenario?.metadata?.video_path || !fireCoord || activeCurrentFrame < fireStartFrame) return null;
+
+              const cascadePath = compareMode
+                ? (compareData?.ground_truth_cascade_path ?? [])
+                : (scenario?.ground_truth_cascade_path ?? []);
+              const hasWildfireFailure = compareMode
+                ? cascadePath.some((s) => s.reason === 'wildfire' && s.failure_timestep <= activeCurrentFrame)
+                : cascadePath.some((s) => s.reason === 'wildfire' && s.failure_time <= activeCurrentFrame);
+              if (!hasWildfireFailure) return null;
+
               return (
                 <g transform={`translate(${sx(fireCoord[0])},${sy(fireCoord[1])})`} className="pointer-events-none">
                   <circle r={14} fill="none" stroke="#f97316" strokeWidth={3} className="animate-ping opacity-75" />
