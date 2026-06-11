@@ -10,6 +10,7 @@ Routes
   GET  /api/scenario/{id}        Full scenario detail (topology + t=0 grid state)
   POST /api/predict              GNN inference on a scenario
   POST /api/cascade              Physics-based cascade from a manually failed node
+  POST /api/stream/predict       Streaming-mode windowed GNN inference (steps 0..end_step)
 """
 
 import sys
@@ -34,6 +35,7 @@ from services.topology import TopologyService
 from services.scenarios import ScenarioService
 from services.cascade import CascadeService
 from services.compare import CompareService
+from services.streaming import StreamingService
 
 # ---------------------------------------------------------------------------
 # Paths (relative to the library root, resolved at startup)
@@ -94,11 +96,12 @@ topo_service: TopologyService = None
 scenario_service: ScenarioService = None
 cascade_service: CascadeService = None
 compare_service: CompareService = None
+streaming_service: StreamingService = None
 
 
 @app.on_event("startup")
 async def _startup():
-    global topo_service, scenario_service, cascade_service, compare_service
+    global topo_service, scenario_service, cascade_service, compare_service, streaming_service
 
     topo_service = TopologyService(str(TOPOLOGY_PATH))
     scenario_service = ScenarioService(str(DATA_DIR), topo_service)
@@ -118,6 +121,11 @@ async def _startup():
         scenario_service=scenario_service,
     )
 
+    streaming_service = StreamingService(
+        predictor=cascade_service.predictor,
+        scenario_service=scenario_service,
+    )
+
 
 # ---------------------------------------------------------------------------
 # Request / response models
@@ -134,6 +142,11 @@ class CascadeRequest(BaseModel):
 
 class CompareRequest(BaseModel):
     scenario_id: int
+
+
+class StreamPredictRequest(BaseModel):
+    scenario_id: int
+    end_step: int   # window = sequence[0:end_step]; must be >= 10
 
 
 # ---------------------------------------------------------------------------
@@ -270,5 +283,28 @@ def compare(req: CompareRequest):
         return _jsonable(result)
     except IndexError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/api/stream/predict", summary="Streaming-mode windowed GNN prediction")
+def stream_predict(req: StreamPredictRequest):
+    """
+    Stateless inference for Streaming (live) mode.
+
+    Runs the GNN on the deterministic growing window sequence[0:end_step]
+    (no random truncation). The frontend calls this on every timer tick once
+    end_step >= 10 and turns risky_nodes into tickets (dedup is client-side).
+
+    Returns scenario_id, end_step, total_timesteps, cascade_detected,
+    cascade_probability, and risky_nodes [{node_id, score, pred_time_minutes}].
+    """
+    try:
+        result = streaming_service.predict_window(req.scenario_id, req.end_step)
+        return _jsonable(result)
+    except IndexError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

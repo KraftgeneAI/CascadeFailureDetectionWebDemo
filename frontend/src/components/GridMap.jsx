@@ -59,6 +59,8 @@ export default function GridMap({
   compareData = null,
   currentFrame = 0,
   onFrameChange,
+  streamingMode = false,
+  ticketNodeIds = null,   // Set of node ids with open tickets (streaming mode)
 }) {
   const containerRef = useRef(null);
 
@@ -401,6 +403,7 @@ export default function GridMap({
               const isPredicted    = compareMode && predictedNodeIds.has(node.id) && currentFrame >= (compareData?.end_idx ?? 0);
               const isRevealed     = compareMode && revealedGtNodeIds.has(node.id);
               const showPurpleRing = isPredicted && !isRevealed;
+              const hasOpenTicket  = streamingMode && ticketNodeIds?.has(node.id);
 
               const colour = overrideColour ?? nodeColour(node);
 
@@ -411,10 +414,17 @@ export default function GridMap({
                   transform={`translate(${node.px + off.dx},${node.py + off.dy})`}
                   style={{ cursor: 'grab' }}
                   onMouseDown={(e) => handleNodeMouseDown(e, node)}
-                  onClick={(e) => !compareMode && handleNodeClick(e, node)}
+                  onClick={(e) => !compareMode && !streamingMode && handleNodeClick(e, node)}
                   onMouseEnter={(e) => showTooltip(e, node)}
                   onMouseLeave={() => setTooltip(null)}
                 >
+                  {hasOpenTicket && (
+                    <>
+                      <circle r={12} fill="none" stroke="#f59e0b" strokeWidth={2.5}
+                        strokeOpacity={0.75} className="animate-ping" style={{ transformOrigin: 'center', transformBox: 'fill-box' }} />
+                      <circle r={10} fill="none" stroke="#f59e0b" strokeWidth={2} strokeOpacity={0.9} />
+                    </>
+                  )}
                   {showPurpleRing && (
                     <circle r={11} fill="none" stroke="#a855f7" strokeWidth={2} strokeOpacity={0.8} />
                   )}
@@ -550,6 +560,9 @@ export default function GridMap({
           <LegendDot colour="#22c55e" label="Generator" />
           <LegendDot colour="#3b82f6" label="Load" />
           <LegendDot colour="#ef4444" label="Failed" />
+          {streamingMode && (
+            <LegendDot colour="#f59e0b" label="Open ticket (at risk)" />
+          )}
           {compareMode && compareData && (
             <>
               <p className="text-gray-700 dark:text-gray-400 font-semibold mt-2 mb-1">Prediction</p>
@@ -564,13 +577,33 @@ export default function GridMap({
           <LegendLine colour="#f97316" label="75 – 100 %" />
           <LegendLine colour="#ef4444" label="> 100 %" />
           <LegendLineDashed colour="#4b5563" label="Disconnected" />
-          {!compareMode && <p className="text-gray-500 dark:text-gray-600 mt-2">Click node to simulate cascade</p>}
+          {!compareMode && !streamingMode && <p className="text-gray-500 dark:text-gray-600 mt-2">Click node to simulate cascade</p>}
           <p className="text-gray-500 dark:text-gray-600">Scroll to zoom · drag to pan</p>
         </div>
       </div>
 
+      {/* ── Streaming-mode footer (read-only live progress) ──────────── */}
+      {streamingMode && totalNormalFrames > 0 && (
+        <div className="shrink-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 px-4 py-3 transition-colors duration-300">
+          <div className="flex items-center gap-3 text-xs">
+            <span className="flex items-center gap-1.5 font-semibold text-red-600 dark:text-red-400">
+              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" /> LIVE
+            </span>
+            <div className="flex-1 h-2 rounded-full bg-gray-200 dark:bg-gray-800 overflow-hidden">
+              <div
+                className="h-full bg-red-500 transition-all duration-300"
+                style={{ width: `${((normalFrame + 1) / totalNormalFrames) * 100}%` }}
+              />
+            </div>
+            <span className="font-mono text-gray-700 dark:text-gray-300">
+              t = {normalFrame + 1} / {totalNormalFrames}
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* ── Normal-mode timeline ────────────────────────────────────── */}
-      {!compareMode && totalNormalFrames > 1 && (
+      {!compareMode && !streamingMode && totalNormalFrames > 1 && (
         <div className="shrink-0 bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 px-4 py-3 space-y-3 transition-colors duration-300">
           <NormalTimelineBar
             total={totalNormalFrames}

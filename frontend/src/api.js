@@ -51,6 +51,19 @@ export function simulateCascade(scenarioId, nodeId, timestep = 0) {
 }
 
 /**
+ * POST /api/stream/predict — streaming-mode windowed GNN inference.
+ * Runs the model on the deterministic growing window sequence[0:endStep].
+ * @param {number} scenarioId
+ * @param {number} endStep - exclusive window end; must be >= 10
+ */
+export function streamPredict(scenarioId, endStep) {
+  return request('/stream/predict', {
+    method: 'POST',
+    body: JSON.stringify({ scenario_id: scenarioId, end_step: endStep }),
+  });
+}
+
+/**
  * POST /api/compare — model prediction vs ground truth comparison.
  * Returns all timestep grid states for animation, the truncation window
  * (start_idx / end_idx), GNN prediction, ground truth, and accuracy metrics.

@@ -1,10 +1,55 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useReducer, useMemo } from 'react';
 import { Sun, Moon } from 'lucide-react';
 import ScenarioSelector from './components/ScenarioSelector';
 import GridMap from './components/GridMap';
 import NodePanel from './components/NodePanel';
 import ComparisonPanel from './components/ComparisonPanel';
-import { simulateCascade, compareScenario } from './api';
+import StreamingPanel from './components/StreamingPanel';
+import { simulateCascade, compareScenario, streamPredict } from './api';
+
+// ── Streaming mode constants ─────────────────────────────────────────
+const STREAM_SPEEDS = [
+  { label: '×0.5', ms: 3000 },
+  { label: '×1', ms: 1500 },
+  { label: '×2', ms: 750 },
+];
+const MIN_WINDOW = 10; // model's minimum input window (timesteps)
+
+/**
+ * Ticket store reducer (in-memory, per streaming run).
+ *
+ * Dedup rule: a risky node only creates a new ticket if it has no OPEN
+ * ticket. Solved tickets don't block — recurrence reopens as a NEW ticket.
+ */
+function ticketsReducer(state, action) {
+  switch (action.type) {
+    case 'INGEST': {
+      const openNodeIds = new Set(
+        state.filter((t) => t.status === 'open').map((t) => t.nodeId),
+      );
+      const fresh = action.riskyNodes
+        .filter((n) => !openNodeIds.has(n.node_id))
+        .map((n) => ({
+          id: `node-${n.node_id}-step-${action.step}`,
+          nodeId: n.node_id,
+          score: n.score,
+          predTimeMinutes: n.pred_time_minutes,
+          createdStep: action.step,
+          status: 'open',
+          solvedStep: null,
+        }));
+      return fresh.length ? [...fresh, ...state] : state;
+    }
+    case 'SOLVE':
+      return state.map((t) =>
+        t.id === action.id ? { ...t, status: 'solved', solvedStep: action.step } : t,
+      );
+    case 'RESET':
+      return [];
+    default:
+      return state;
+  }
+}
 
 export default function App() {
   const [scenario, setScenario] = useState(null);
@@ -67,6 +112,105 @@ export default function App() {
   const [compareError, setCompareError] = useState(null);
   const [currentFrame, setCurrentFrame] = useState(0);
 
+  // ── Streaming mode (live telemetry replay + risk tickets) ───────────
+  const [streamingMode, setStreamingMode] = useState(false);
+  const [streamRunning, setStreamRunning] = useState(false);
+  const [streamStep, setStreamStep] = useState(0);          // 0-based frame index
+  const [streamSpeedIdx, setStreamSpeedIdx] = useState(1);
+  const [streamPrediction, setStreamPrediction] = useState(null);
+  const [streamInferring, setStreamInferring] = useState(false);
+  const [streamError, setStreamError] = useState(null);
+  const [tickets, dispatchTickets] = useReducer(ticketsReducer, []);
+  const streamInFlight = useRef(false);     // skip ticks while a request is pending
+  const lastIngestedStep = useRef(0);       // drop stale responses
+
+  const totalStreamSteps = scenario?.total_timesteps ?? 0;
+
+  function resetStreamRun() {
+    setStreamStep(0);
+    setStreamPrediction(null);
+    setStreamError(null);
+    setStreamInferring(false);
+    dispatchTickets({ type: 'RESET' });
+    streamInFlight.current = false;
+    lastIngestedStep.current = 0;
+  }
+
+  function exitStreaming() {
+    setStreamingMode(false);
+    setStreamRunning(false);
+    resetStreamRun();
+  }
+
+  function handleToggleStreaming() {
+    if (!scenario) return;
+    if (streamingMode) {
+      exitStreaming();
+      return;
+    }
+    // Streaming is exclusive with compare mode
+    setCompareMode(false);
+    setCompareData(null);
+    setCompareError(null);
+    setSelectedNode(null);
+    setCascadeResult(null);
+    resetStreamRun();
+    setStreamingMode(true);
+    setStreamRunning(true);
+  }
+
+  function handleStreamRestart() {
+    resetStreamRun();
+    setStreamRunning(true);
+  }
+
+  // Timer: advance one timestep per tick while running
+  useEffect(() => {
+    if (!streamingMode || !streamRunning || totalStreamSteps === 0) return;
+    const id = setInterval(() => {
+      setStreamStep((s) => Math.min(s + 1, totalStreamSteps - 1));
+    }, STREAM_SPEEDS[streamSpeedIdx].ms);
+    return () => clearInterval(id);
+  }, [streamingMode, streamRunning, streamSpeedIdx, totalStreamSteps]);
+
+  // Auto-stop at end of sequence
+  useEffect(() => {
+    if (streamingMode && totalStreamSteps > 0 && streamStep >= totalStreamSteps - 1) {
+      setStreamRunning(false);
+    }
+  }, [streamingMode, streamStep, totalStreamSteps]);
+
+  // Windowed inference: once >= MIN_WINDOW steps have arrived, run the model
+  // on the growing window [0..arrived) after every new step.
+  useEffect(() => {
+    if (!streamingMode || !scenario) return;
+    const arrived = streamStep + 1;
+    if (arrived < MIN_WINDOW) return;
+    if (streamInFlight.current) return;   // coalesce: next tick covers a larger window
+
+    streamInFlight.current = true;
+    setStreamInferring(true);
+    streamPredict(scenario.id, arrived)
+      .then((res) => {
+        if (res.end_step > lastIngestedStep.current) {
+          lastIngestedStep.current = res.end_step;
+          setStreamPrediction(res);
+          setStreamError(null);
+          dispatchTickets({ type: 'INGEST', riskyNodes: res.risky_nodes, step: res.end_step });
+        }
+      })
+      .catch((e) => setStreamError(e.message))
+      .finally(() => {
+        streamInFlight.current = false;
+        setStreamInferring(false);
+      });
+  }, [streamingMode, scenario, streamStep]);
+
+  const openTicketNodeIds = useMemo(
+    () => new Set(tickets.filter((t) => t.status === 'open').map((t) => t.nodeId)),
+    [tickets],
+  );
+
   // ── Handlers ─────────────────────────────────────────────────────────
 
   function handleScenarioLoad(detail) {
@@ -79,10 +223,11 @@ export default function App() {
     setCompareData(null);
     setCompareError(null);
     setCurrentFrame(0);
+    exitStreaming();
   }
 
   async function handleNodeClick(node) {
-    if (compareMode) return;
+    if (compareMode || streamingMode) return;
     setSelectedNode(node);
     if (!scenario) return;
 
@@ -108,6 +253,7 @@ export default function App() {
       setCurrentFrame(0);
       return;
     }
+    exitStreaming();   // compare is exclusive with streaming
     setCompareLoading(true);
     setCompareError(null);
     try {
@@ -124,7 +270,9 @@ export default function App() {
 
   const activeGridState = compareMode && compareData
     ? compareData.timesteps[currentFrame]
-    : (scenario?.all_timesteps?.[normalFrame] ?? scenario?.grid_state ?? null);
+    : streamingMode
+      ? (scenario?.all_timesteps?.[streamStep] ?? scenario?.grid_state ?? null)
+      : (scenario?.all_timesteps?.[normalFrame] ?? scenario?.grid_state ?? null);
 
   const totalNormalFrames = scenario?.total_timesteps ?? 0;
   const isCompareAvailable = scenario?.metadata?.is_cascade === true;
@@ -169,7 +317,25 @@ export default function App() {
             {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
           </button>
 
-          {isCompareAvailable && <div className="h-5 w-px bg-gray-300 dark:bg-gray-700 mx-1"></div>}
+          {scenario && <div className="h-5 w-px bg-gray-300 dark:bg-gray-700 mx-1"></div>}
+
+          {scenario && (
+            <button
+              onClick={handleToggleStreaming}
+              className={`relative px-3 py-1.5 rounded text-xs font-semibold transition-colors ${
+                streamingMode
+                  ? 'bg-red-600 text-white hover:bg-red-700'
+                  : 'bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
+              }`}
+            >
+              {streamingMode ? '✕ Exit Stream' : '▶ Live Stream'}
+              {streamingMode && openTicketNodeIds.size > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold flex items-center justify-center">
+                  {openTicketNodeIds.size}
+                </span>
+              )}
+            </button>
+          )}
 
           {isCompareAvailable && (
             <button
@@ -199,7 +365,23 @@ export default function App() {
             <ScenarioSelector onScenarioLoad={handleScenarioLoad} />
           </div>
           <div className="flex-1 p-4">
-            {compareMode && compareData ? (
+            {streamingMode ? (
+              <StreamingPanel
+                streamStep={streamStep}
+                totalSteps={totalStreamSteps}
+                running={streamRunning}
+                onToggleRun={() => setStreamRunning((r) => !r)}
+                onRestart={handleStreamRestart}
+                speedIdx={streamSpeedIdx}
+                speeds={STREAM_SPEEDS}
+                onSpeedChange={setStreamSpeedIdx}
+                prediction={streamPrediction}
+                inferring={streamInferring}
+                error={streamError}
+                tickets={tickets}
+                onSolve={(id) => dispatchTickets({ type: 'SOLVE', id, step: streamStep + 1 })}
+              />
+            ) : compareMode && compareData ? (
               <ComparisonPanel
                 compareData={compareData}
                 currentFrame={currentFrame}
@@ -237,13 +419,15 @@ export default function App() {
               scenario={{ ...scenario, grid_state: activeGridState }}
               selectedNodeId={selectedNode?.id}
               onNodeClick={handleNodeClick}
-              normalFrame={normalFrame}
+              normalFrame={streamingMode ? streamStep : normalFrame}
               onNormalFrameChange={setNormalFrame}
               totalNormalFrames={totalNormalFrames}
               compareMode={compareMode}
               compareData={compareData}
               currentFrame={currentFrame}
               onFrameChange={setCurrentFrame}
+              streamingMode={streamingMode}
+              ticketNodeIds={openTicketNodeIds}
             />
           ) : (
             <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-600 text-sm">
